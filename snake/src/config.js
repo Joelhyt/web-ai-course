@@ -18,7 +18,7 @@ export const MAX_QUEUED = 2;
 
 export const COLORS = Object.freeze({
   background: '#10151c',
-  grid: '#1a222d',
+  grid: '#212c3b',
   snake: '#4ade80',
   snakeHead: '#bbf7d0',
   food: '#f87171',
