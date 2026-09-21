@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snake</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game">
+      <header class="hud">
+        <h1>Snake</h1>
+        <dl class="stats">
+          <div class="stat">
+            <dt>Score</dt>
+            <dd id="score">0</dd>
+          </div>
+          <div class="stat">
+            <dt>Best</dt>
+            <dd id="high-score">0</dd>
+          </div>
+          <div class="stat">
+            <dt>Status</dt>
+            <dd id="status">Ready</dd>
+          </div>
+        </dl>
+      </header>
+
+      <canvas id="board" aria-label="Snake game board"></canvas>
+
+      <footer class="controls">
+        <label for="walls">
+          Walls
+          <select id="walls">
+            <option value="solid">Solid — crashing ends the round</option>
+            <option value="wrap">Wrap — pass through to the far side</option>
+          </select>
+        </label>
+        <p class="keys">
+          <kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> or
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to steer ·
+          <kbd>Space</kbd>/<kbd>P</kbd> to pause · <kbd>Enter</kbd>/<kbd>R</kbd> to restart
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
