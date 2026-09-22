@@ -124,3 +124,27 @@ test('a floor is big enough to be worth exploring', () => {
     assert.ok(open > window, `seed ${seed}: only ${open} open tiles, window is ${window}`);
   }
 });
+
+test('narrow passages exist, but most of the floor is wide', () => {
+  const { cols, rows } = config;
+  let narrow = 0;
+  let open = 0;
+
+  for (const { level } of floors(120, 4)) {
+    for (let y = 1; y < rows - 1; y += 1) {
+      for (let x = 1; x < cols - 1; x += 1) {
+        if (level.blocked.has(at(cols, { x, y }))) continue;
+        open += 1;
+        const neighbours = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(
+          ([dx, dy]) => !level.blocked.has(at(cols, { x: x + dx, y: y + dy })),
+        ).length;
+        // Exactly two open neighbours is a single-tile passage.
+        if (neighbours === 2) narrow += 1;
+      }
+    }
+  }
+
+  const share = narrow / open;
+  assert.ok(share > 0.01, 'a floor with no tight spots at all has no tension in it');
+  assert.ok(share < 0.2, `${(share * 100).toFixed(1)}% of the floor is single-tile passage`);
+});

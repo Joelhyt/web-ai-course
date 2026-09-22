@@ -772,3 +772,58 @@ test('a single-screen board is unaffected by the on-screen rule', () => {
   // Far more distinct cells than a window around the head could account for.
   assert.ok(seen.size > 60, `only ${seen.size} distinct spawn cells`);
 });
+
+// --- Landing on a floor -----------------------------------------------------
+
+test('a new floor starts slowed down and winds back up to pace', () => {
+  const state = createGame({ mode: 'adventure' });
+  state.status = 'running';
+
+  const normal = state.tickInterval;
+  assert.equal(state.grace, state.config.graceMs);
+  assert.ok(
+    effectiveInterval(state) > normal * 3,
+    'the first moves on a floor should be much slower',
+  );
+
+  advanceClock(state, state.config.graceMs / 2, firstCell);
+  const midway = effectiveInterval(state);
+  assert.ok(midway > normal && midway < normal * 3, 'and should be winding back up');
+
+  advanceClock(state, state.config.graceMs, firstCell);
+  assert.equal(state.grace, 0);
+  assert.equal(effectiveInterval(state), normal, 'back to full pace, not a fraction of it');
+});
+
+test('descending grants the grace again', () => {
+  const state = createGame({ mode: 'adventure' });
+  state.status = 'running';
+  advanceClock(state, state.config.graceMs, firstCell);
+  assert.equal(state.grace, 0);
+
+  state.snake = [{ x: state.portal.x - 1, y: state.portal.y }, { x: state.portal.x - 2, y: state.portal.y }];
+  state.direction = { x: 1, y: 0 };
+  state.shards = [];
+  state.portalOpen = true;
+  state.pending = [];
+  tick(state, firstCell);
+
+  assert.equal(state.depth, 2);
+  assert.equal(state.grace, state.config.graceMs);
+});
+
+test('the grace stacks with Slow rather than replacing it', () => {
+  const state = createGame({ mode: 'adventure' });
+  const graceOnly = effectiveInterval(state);
+
+  state.effects.slow = 5000;
+
+  assert.equal(effectiveInterval(state), graceOnly * state.config.slowFactor);
+});
+
+test('the classic modes have no landing grace', () => {
+  const state = runningGame();
+
+  assert.equal(state.grace, 0);
+  assert.equal(effectiveInterval(state), state.tickInterval);
+});

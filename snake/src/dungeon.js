@@ -86,9 +86,9 @@ function carveRoom(floor, cols, room) {
 // Adventure punishing rather than tense.
 export const CORRIDOR_WIDTH = 2;
 
-function brush(floor, cols, rows, x, y) {
-  for (let dy = 0; dy < CORRIDOR_WIDTH; dy += 1) {
-    for (let dx = 0; dx < CORRIDOR_WIDTH; dx += 1) {
+function brush(floor, cols, rows, x, y, width) {
+  for (let dy = 0; dy < width; dy += 1) {
+    for (let dx = 0; dx < width; dx += 1) {
       const bx = Math.min(cols - 2, x + dx);
       const by = Math.min(rows - 2, y + dy);
       if (bx < 1 || by < 1) continue;
@@ -97,21 +97,28 @@ function brush(floor, cols, rows, x, y) {
   }
 }
 
+// A minority of passages are carved as single-tile cracks instead. They are the
+// tense stretch of a floor — no room to turn around, and a bad place to meet a
+// worm — but a whole dungeon of them is punishing rather than tense, so most
+// corridors stay wide.
+export const NARROW_CHANCE = 0.25;
+
 function carveCorridor(floor, cols, rows, from, to, rng) {
   // An L in a random order: always turning the same way makes every floor read
   // like the same floor.
   const horizontalFirst = rng() < 0.5;
   const corner = horizontalFirst ? { x: to.x, y: from.y } : { x: from.x, y: to.y };
+  const width = rng() < NARROW_CHANCE ? 1 : CORRIDOR_WIDTH;
 
   for (const [a, b] of [[from, corner], [corner, to]]) {
     const stepX = Math.sign(b.x - a.x);
     const stepY = Math.sign(b.y - a.y);
     let { x, y } = a;
-    brush(floor, cols, rows, x, y);
+    brush(floor, cols, rows, x, y, width);
     while (x !== b.x || y !== b.y) {
       x += stepX;
       y += stepY;
-      brush(floor, cols, rows, x, y);
+      brush(floor, cols, rows, x, y, width);
     }
   }
 }

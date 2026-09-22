@@ -25,6 +25,27 @@ export const DEFAULTS = Object.freeze({
   depthBonus: 10, // points for clearing a floor
   depthStep: 4, // ms shaved off the interval per floor descended
 
+  // Arriving on a floor. You cannot see what is around you the instant you
+  // land, so the snake crawls for a moment and winds back up to pace. Without
+  // it, descending at depth 12 means dying to a wall you never had time to read.
+  graceMs: 2200,
+  graceFactor: 3.6, // interval multiplier at the moment of arrival
+
+  // Enemies. Every number here exists to keep them fair: they are always slower
+  // than the snake, they announce themselves before they move, and they expire.
+  enemyFromDepth: 3, // the first floor that can hunt you
+  enemySpeedFactor: 1.55, // multiples of the snake's *current* interval
+  enemyLifetime: 16_000, // ms a crawler hunts before it fades out
+  enemyFadeMs: 2500, // ms of visible fading before it is gone
+  enemyWakeMs: 1200, // ms a crawler spends surfacing, motionless, on arrival
+  enemyChance: 0.32, // odds per second of one surfacing
+  enemyCooldown: 6000, // ms between arrivals
+  enemySpawnDistance: 14, // minimum tiles away it may surface
+  enemyLength: 5,
+  sleeperWakeRadius: 6, // how close you have to get to wake one
+  sleeperWakeMs: 800,
+  sleeperHuntMs: 11_000,
+
   // Power-ups. Every duration is in milliseconds and is spent against the wall
   // clock, not against ticks: a power-up collected by a long, fast snake has to
   // last exactly as long as one collected in the opening seconds of a round.
@@ -111,6 +132,10 @@ export const COLORS = Object.freeze({
   floorAlt: '#1b2533', // its flagstone variation
   floorGrid: '#222e3e',
   shard: '#67e8f9',
+  crawler: '#fb7185', // the hunter that surfaces and comes for you
+  crawlerHead: '#ffe4e6',
+  sleeper: '#fb923c', // the coiled one, once it wakes
+  sleeperDormant: '#6b5a3f', // and while it is still asleep
   portalLocked: '#7c8ba1',
   portalOpen: '#34d399',
   title: '#f8fafc',

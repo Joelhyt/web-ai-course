@@ -3,6 +3,7 @@
 
 import { DEFAULTS, MAX_QUEUED, MODE_PRESETS, POWER_UPS, POWER_UP_TYPES } from './config.js';
 import { generateLevel } from './dungeon.js';
+import { advanceEnemies, enemyHits, placeSleepers } from './enemies.js';
 
 export function cellsEqual(a, b) {
   return a.x === b.x && a.y === b.y;
@@ -26,6 +27,9 @@ export function freeCells(state, extras = []) {
   // dragged crumb — is ever placed inside a wall.
   for (const index of state.blocked) occupied.add(index);
   for (const shard of state.shards) occupied.add(shard.y * cols + shard.x);
+  for (const enemy of state.enemies) {
+    for (const seg of enemy.body) occupied.add(seg.y * cols + seg.x);
+  }
   if (state.portal) occupied.add(state.portal.y * cols + state.portal.x);
 
   const free = [];
@@ -130,14 +134,22 @@ export function isEffectActive(state, type) {
 }
 
 /**
- * The interval the loop should actually wait between moves. Slow multiplies the
- * score-derived interval rather than replacing it, so the power-up is worth the
- * same relief late in a round as it is early on.
+ * The interval the loop should actually wait between moves.
+ *
+ * Slow multiplies the score-derived interval rather than replacing it, so the
+ * power-up is worth the same relief late in a round as it is early on.
+ *
+ * The landing grace multiplies it too, decaying back to 1 over `graceMs`: you
+ * arrive on a new floor unable to see what is around you, and at depth 12 the
+ * normal pace means dying to a wall you never had a chance to read. It winds
+ * back up quickly, so it costs a moment rather than the tension.
  */
 export function effectiveInterval(state) {
-  return isEffectActive(state, 'slow')
-    ? state.tickInterval * state.config.slowFactor
-    : state.tickInterval;
+  const slow = isEffectActive(state, 'slow') ? state.config.slowFactor : 1;
+  const grace = state.grace > 0
+    ? 1 + (state.config.graceFactor - 1) * (state.grace / state.config.graceMs)
+    : 1;
+  return state.tickInterval * slow * grace;
 }
 
 export function createGame(overrides = {}, rng = Math.random) {
@@ -183,6 +195,10 @@ export function createGame(overrides = {}, rng = Math.random) {
     portal: null,
     portalOpen: false,
     depth: config.mode === 'adventure' ? 1 : null,
+    enemies: [],
+    enemyCooldown: config.enemyCooldown,
+    // Milliseconds of slowed-down arrival left on this floor.
+    grace: 0,
     // Segments still owed to the snake. A shard is worth several, which they
     // are paid out over the following moves rather than all at once.
     growth: 0,
@@ -191,7 +207,7 @@ export function createGame(overrides = {}, rng = Math.random) {
   };
 
   if (config.mode === 'adventure') {
-    enterLevel(state, generateLevel(config, 1, rng));
+    enterLevel(state, generateLevel(config, 1, rng), rng);
   } else {
     state.food = spawnFood(state, rng);
   }
@@ -199,7 +215,7 @@ export function createGame(overrides = {}, rng = Math.random) {
 }
 
 /** Moves the snake onto a freshly generated floor. */
-function enterLevel(state, level) {
+function enterLevel(state, level, rng = Math.random) {
   state.blocked = level.blocked;
   state.snake = level.snake;
   state.direction = level.direction;
@@ -216,6 +232,11 @@ function enterLevel(state, level) {
   state.bonusFood = [];
   state.powerUp = null;
   state.powerUpCooldown = state.config.powerUpCooldown;
+
+  // Whatever was chasing you does not follow you down the hole.
+  state.enemies = placeSleepers(state, level.depth, rng);
+  state.enemyCooldown = state.config.enemyCooldown;
+  state.grace = state.config.graceMs;
 }
 
 /**
@@ -384,6 +405,17 @@ export function advanceClock(state, dt, rng = Math.random) {
   expireEffects(state, dt);
   advancePowerUps(state, dt, rng);
 
+  if (state.grace > 0) state.grace = Math.max(0, state.grace - dt);
+
+  // Enemies move on the clock rather than on the snake's moves, which is how
+  // their pace stays a fixed fraction of yours however fast you are going.
+  if (state.depth !== null && advanceEnemies(state, dt, effectiveInterval(state), rng)) {
+    if (!isEffectActive(state, 'ghost')) {
+      state.status = 'over';
+      return state;
+    }
+  }
+
   if (state.timeLeft !== null) {
     state.timeLeft = Math.max(0, state.timeLeft - dt);
     if (state.timeLeft === 0) state.status = 'timeup';
@@ -400,7 +432,7 @@ export function advanceClock(state, dt, rng = Math.random) {
 function descend(state, rng) {
   state.depth += 1;
   state.score += state.config.depthBonus;
-  enterLevel(state, generateLevel(state.config, state.depth, rng));
+  enterLevel(state, generateLevel(state.config, state.depth, rng), rng);
   updateSpeed(state);
 }
 
@@ -428,6 +460,13 @@ export function tick(state, rng = Math.random) {
   // Rock is rock. Ghost makes the snake insubstantial to *itself*, not to the
   // dungeon — a wall-phasing snake would make every floor's layout irrelevant.
   if (isWall(state, x, y)) {
+    state.status = 'over';
+    return state;
+  }
+
+  // Ghost phases through worms as well as through yourself — but never through
+  // rock. Being hunted is exactly when the power-up should be worth finding.
+  if (!isEffectActive(state, 'ghost') && enemyHits(state, { x, y })) {
     state.status = 'over';
     return state;
   }

@@ -128,6 +128,83 @@ function drawDungeon(ctx, state, cell, bounds) {
   ctx.stroke();
 }
 
+/**
+ * Enemies. Every phase they can be in looks different on purpose: a dormant
+ * sleeper has to read as scenery you may walk around, a waking one as a threat
+ * that has not started yet, and a fading one as a threat that is nearly over.
+ */
+function drawEnemies(ctx, state, cell, time) {
+  for (const enemy of state.enemies) {
+    const dormant = enemy.phase === 'dormant';
+    const waking = enemy.phase === 'waking';
+    const fading = enemy.phase === 'hunting' && enemy.msLeft <= state.config.enemyFadeMs;
+
+    const base = enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler;
+    const color = dormant ? COLORS.sleeperDormant : base;
+
+    ctx.save();
+    if (dormant) {
+      ctx.globalAlpha = 0.72 + Math.sin(time / 700) * 0.08; // a slow, sleeping breath
+    } else if (waking) {
+      ctx.globalAlpha = 0.45 + Math.abs(Math.sin(time / 130)) * 0.55; // surfacing
+    } else if (fading) {
+      ctx.globalAlpha = Math.max(0.12, enemy.msLeft / state.config.enemyFadeMs) * 0.9;
+    }
+
+    const inset = cell * 0.14;
+    const size = cell - inset * 2;
+
+    for (let i = enemy.body.length - 1; i >= 0; i -= 1) {
+      const seg = enemy.body[i];
+      const taper = 1 - (i / enemy.body.length) * 0.45;
+      const pad = (size * (1 - taper)) / 2;
+      ctx.fillStyle = i === 0 && !dormant ? COLORS.crawlerHead : color;
+      ctx.beginPath();
+      ctx.arc(
+        seg.x * cell + cell / 2,
+        seg.y * cell + cell / 2,
+        (size / 2) * taper + pad * 0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+
+    const head = enemy.body[0];
+    const hx = head.x * cell + cell / 2;
+    const hy = head.y * cell + cell / 2;
+
+    if (dormant) {
+      // A coil mark, so a sleeping worm reads as asleep rather than as dead.
+      ctx.strokeStyle = COLORS.sleeper;
+      ctx.globalAlpha *= 0.7;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * 0.22, 0, Math.PI * 1.6);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = COLORS.background;
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(hx + sign * cell * 0.13, hy - cell * 0.06, cell * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (waking) {
+      // An expanding ring: the tell that something is about to start moving.
+      const pulse = (time % 900) / 900;
+      ctx.strokeStyle = base;
+      ctx.globalAlpha = (1 - pulse) * 0.7;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * (0.3 + pulse * 0.9), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 /** Shards: slowly spinning diamonds, the thing a floor is actually about. */
 function drawShards(ctx, state, cell, time) {
   for (const shard of state.shards) {
@@ -465,6 +542,30 @@ function drawTimeBar(ctx, state, width) {
   ctx.restore();
 }
 
+/**
+ * The depth announcement on arrival. It fades out over the same window as the
+ * landing grace, so the banner *is* the explanation for why the snake is
+ * crawling — the moment it clears, you are back at full pace.
+ */
+function drawArrivalBanner(ctx, state, width, height) {
+  if (state.grace <= 0 || state.status !== 'running') return;
+
+  const progress = state.grace / state.config.graceMs;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, progress * 1.6);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = COLORS.title;
+  ctx.font = '600 30px system-ui, sans-serif';
+  ctx.fillText(`DEPTH ${state.depth}`, width / 2, height / 2 - 12);
+
+  ctx.fillStyle = COLORS.subtitle;
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillText('take a breath — the floor is new', width / 2, height / 2 + 16);
+  ctx.restore();
+}
+
 function overlayText(state) {
   const timed = state.config.mode === 'time';
   const adventure = state.config.mode === 'adventure';
@@ -525,6 +626,15 @@ function drawOffscreenMarkers(ctx, state, camera, view, cell) {
     targets.push({
       cell: state.portal,
       color: state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked,
+    });
+  }
+  // Only enemies that are actually hunting: a chevron for a sleeper you have
+  // not woken would be a warning about nothing.
+  for (const enemy of state.enemies) {
+    if (enemy.phase !== 'hunting') continue;
+    targets.push({
+      cell: enemy.body[0],
+      color: enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler,
     });
   }
 
@@ -593,6 +703,13 @@ function drawMinimap(ctx, state, camera, view, cell) {
     ctx.fillRect(ox + cellPos.x * scale - (size - scale) / 2, oy + cellPos.y * scale - (size - scale) / 2, size, size);
   };
 
+  for (const enemy of state.enemies) {
+    const color = enemy.phase === 'dormant'
+      ? COLORS.sleeperDormant
+      : (enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler);
+    for (const seg of enemy.body) dot(seg, color, scale);
+    dot(enemy.body[0], color, scale + 2);
+  }
   for (const shard of state.shards) dot(shard, COLORS.shard, scale + 2);
   if (state.portal) dot(state.portal, state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked, scale + 2);
   for (const seg of state.snake) dot(seg, COLORS.snake, scale);
@@ -646,6 +763,7 @@ export function render(ctx, state, time = 0, camera = { x: 0, y: 0 }) {
     drawBonusFood(ctx, crumb, cell, effectMs(state, 'feast'), time);
   }
   if (state.food) drawFood(ctx, state.food, cell);
+  drawEnemies(ctx, state, cell, time);
   drawSnake(ctx, state, cell, time);
 
   ctx.restore();
@@ -659,5 +777,6 @@ export function render(ctx, state, time = 0, camera = { x: 0, y: 0 }) {
   }
   drawEffectFrames(ctx, state, width, height);
   drawTimeBar(ctx, state, width);
+  drawArrivalBanner(ctx, state, width, height);
   drawOverlay(ctx, state, width, height);
 }
