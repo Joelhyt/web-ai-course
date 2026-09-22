@@ -225,6 +225,25 @@ kbd {
   color: var(--muted);
 }
 
+/* Lives. Tabular figures do not apply to hearts, so the width is left to shrink
+   as they are spent — the label keeps the column anchored. */
+.hearts {
+  color: #fb7185;
+  letter-spacing: 0.06em;
+}
+
+.hearts.last {
+  animation: heart-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes heart-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hearts.last { animation: none; }
+}
+
 /* The time attack clock, ticking red over the last ten seconds. */
 #time.urgent {
   color: #f87171;

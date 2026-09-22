@@ -10,6 +10,9 @@ export const DEFAULTS = Object.freeze({
   viewCols: null,
   viewRows: null,
 
+  // Null means the snake grows without limit, as Snake has always done.
+  maxSnakeLength: null,
+
   baseInterval: 120, // ms between moves at score 0
   minInterval: 60, // fastest the game is allowed to get
   speedStep: 1, // ms shaved off the interval per food eaten
@@ -25,6 +28,14 @@ export const DEFAULTS = Object.freeze({
   depthBonus: 10, // points for clearing a floor
   depthStep: 4, // ms shaved off the interval per floor descended
 
+  // Lives. Running out of floor is a mistake worth a retry rather than the end
+  // of a twenty-floor run: dying puts you back at the top of the *same* floor,
+  // laid out exactly as it was, with the shards you had already taken put back.
+  startingLives: 3,
+  minSnakeLength: 3, // a bite never leaves you shorter than this
+  lifeEveryLevels: 5, // a life back for every five floors cleared
+  maxLives: 5, // stockpiling them would flatten the difficulty curve late on
+
   // Arriving on a floor. You cannot see what is around you the instant you
   // land, so the snake crawls for a moment and winds back up to pace. Without
   // it, descending at depth 12 means dying to a wall you never had time to read.
@@ -34,7 +45,16 @@ export const DEFAULTS = Object.freeze({
   // Enemies. Every number here exists to keep them fair: they are always slower
   // than the snake, they announce themselves before they move, and they expire.
   enemyFromDepth: 3, // the first floor that can hunt you
-  enemySpeedFactor: 1.55, // multiples of the snake's *current* interval
+  enemySpeedFactor: 1.8, // multiples of the snake's *current* interval
+  maxHunters: 2, // crawlers hunting at once, however deep you are
+  maxSleepers: 2, // coiled on a floor when you arrive
+
+  // Being bitten. A worm that reaches your body takes the tail behind it
+  // instead of the run: you come out shorter, it stops to feed, and you are
+  // briefly untouchable. Only a head-on meeting costs a life.
+  enemyFeedMs: 2000, // how long a worm stops to eat what it bit off
+  biteImmunityMs: 1500, // untouchable while you get clear
+  scrapFadeMs: 900, // how long the severed tail lingers, fading
   enemyLifetime: 16_000, // ms a crawler hunts before it fades out
   enemyFadeMs: 2500, // ms of visible fading before it is gone
   enemyWakeMs: 1200, // ms a crawler spends surfacing, motionless, on arrival
@@ -74,6 +94,10 @@ export const MODE_PRESETS = Object.freeze({
     cell: 20,
     walls: 'solid',
     baseInterval: 135,
+    // Past this the tail dissolves into the dark. A 7-shard floor used to leave
+    // the snake 17 segments long in two-tile corridors, which is more hitbox
+    // than the floor has room for.
+    maxSnakeLength: 12,
   }),
 });
 

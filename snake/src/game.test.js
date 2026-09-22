@@ -15,7 +15,7 @@ import {
   effectiveInterval,
   advanceClock,
 } from './game.js';
-import { POWER_UPS } from './config.js';
+import { POWER_UPS, DEFAULTS } from './config.js';
 
 // Deterministic stand-in for Math.random: always picks the first free cell.
 const firstCell = () => 0;
@@ -568,10 +568,12 @@ test('the clock is paused with the game', () => {
 // --- Adventure --------------------------------------------------------------
 
 // A hand-built floor, so the rules can be tested without depending on whatever
-// the generator happens to produce: a 7x5 room with a rock pillar at 3,2.
+// the generator happens to produce: a 7x5 room with a rock pillar at 3,2. It
+// runs with no lives, so a death is a death here rather than a retry — lives
+// have their own tests below, on real generated floors.
 function dungeon(overrides = {}) {
   const state = createGame({
-    cols: 7, rows: 5, mode: 'adventure', powerUpChance: 0, ...overrides,
+    cols: 7, rows: 5, mode: 'adventure', powerUpChance: 0, startingLives: 0, ...overrides,
   }, firstCell);
 
   const blocked = new Set();
@@ -826,4 +828,191 @@ test('the classic modes have no landing grace', () => {
 
   assert.equal(state.grace, 0);
   assert.equal(effectiveInterval(state), state.tickInterval);
+});
+
+// --- Lives ------------------------------------------------------------------
+
+/** A real generated floor, wound past its landing grace and ready to play. */
+function descentRun(overrides = {}) {
+  const state = createGame({ mode: 'adventure', powerUpChance: 0, ...overrides });
+  state.status = 'running';
+  advanceClock(state, state.config.graceMs, firstCell);
+  return state;
+}
+
+/** Drives the snake straight ahead until it hits something and dies once. */
+function crash(state) {
+  const before = state.lives;
+  for (let i = 0; i < 400; i += 1) {
+    tick(state, firstCell);
+    if (state.status !== 'running' || state.lives !== before) break;
+  }
+  return state;
+}
+
+test('adventure starts with lives, the other modes have none', () => {
+  assert.equal(createGame({ mode: 'adventure' }).lives, DEFAULTS.startingLives);
+  assert.equal(createGame().lives, null);
+  assert.equal(createGame({ mode: 'time' }).lives, null);
+});
+
+test('crashing spends a life and restarts the same floor', () => {
+  const state = descentRun();
+  const floor = [...state.blocked];
+  const shards = state.shards.length;
+  const { depth } = state;
+
+  // Take a shard first, so the retry has something to put back.
+  state.score += 1;
+  state.shardsTaken = 1;
+  state.shards = state.shards.slice(1);
+  const score = state.score;
+
+  crash(state);
+
+  assert.equal(state.status, 'running', 'a life should have been spent, not the run');
+  assert.equal(state.lives, DEFAULTS.startingLives - 1);
+  assert.equal(state.depth, depth, 'you restart the floor you died on');
+  assert.deepEqual([...state.blocked], floor, 'and it is laid out exactly as before');
+  assert.equal(state.shards.length, shards, 'with its shards back');
+  assert.equal(state.shardsTaken, 0);
+  assert.equal(state.score, score - 1, 'and the points for them taken back too');
+});
+
+test('a retry starts the floor over rather than resuming it', () => {
+  const state = descentRun();
+  state.portalOpen = true;
+  state.growth = 6;
+  state.effects.ghost = 4000;
+  const start = state.level.snake.map((seg) => ({ ...seg }));
+
+  crash(state);
+
+  assert.deepEqual(state.snake, start, 'back at the entrance, at the starting length');
+  assert.equal(state.portalOpen, false, 'the portal is locked again');
+  assert.equal(state.growth, 0);
+  assert.equal(state.effects.ghost, 0, 'power-ups do not survive the snake that had them');
+  assert.equal(state.grace, state.config.graceMs, 'and you get the landing grace again');
+  assert.equal(state.arrival, 'retry');
+});
+
+test('the run ends when the last life is gone', () => {
+  const state = descentRun();
+
+  for (let life = DEFAULTS.startingLives; life > 0; life -= 1) {
+    assert.equal(state.status, 'running');
+    state.lives = life;
+    crash(state);
+  }
+
+  assert.equal(state.lives, 0);
+  crash(state);
+  assert.equal(state.status, 'over');
+});
+
+test('being caught by an enemy costs a life rather than the run', () => {
+  const state = descentRun();
+  state.depth = 4;
+  state.enemies = [{
+    kind: 'crawler',
+    body: state.snake.map((seg) => ({ ...seg })),
+    phase: 'hunting',
+    phaseMs: 0,
+    msLeft: 9000,
+    accumulator: 0,
+  }];
+
+  advanceClock(state, 500, firstCell);
+
+  assert.equal(state.status, 'running');
+  assert.equal(state.lives, DEFAULTS.startingLives - 1);
+  assert.deepEqual(state.enemies.filter((e) => e.kind === 'crawler'), [], 'the floor is reset');
+});
+
+test('a life comes back every five floors, up to a cap', () => {
+  const state = descentRun();
+  state.lives = 1;
+
+  const reached = [];
+  for (let i = 0; i < 12; i += 1) {
+    const before = state.lives;
+    state.shards = [];
+    state.portalOpen = true;
+    state.snake = [{ x: state.portal.x, y: state.portal.y }];
+    // Standing on an open portal, the next move takes it.
+    state.snake = [
+      { x: state.portal.x - 1, y: state.portal.y },
+      { x: state.portal.x - 2, y: state.portal.y },
+    ];
+    state.direction = { x: 1, y: 0 };
+    state.pending = [];
+    tick(state, firstCell);
+    if (state.lives > before) reached.push(state.depth);
+  }
+
+  assert.deepEqual(reached, [6, 11], 'a life on arriving at depth 6 and 11');
+  assert.equal(state.arrival, 'descended', 'and the banner goes back to normal after');
+
+  state.lives = state.config.maxLives;
+  state.depth = 15;
+  state.shards = [];
+  state.portalOpen = true;
+  state.snake = [
+    { x: state.portal.x - 1, y: state.portal.y },
+    { x: state.portal.x - 2, y: state.portal.y },
+  ];
+  state.direction = { x: 1, y: 0 };
+  tick(state, firstCell);
+  assert.equal(state.lives, state.config.maxLives, 'the cap holds');
+});
+
+test('adventure caps how long the snake can get', () => {
+  // The 7x5 room, with a cap low enough to hit inside it.
+  const state = dungeon({ maxSnakeLength: 5 });
+  state.snake = [{ x: 1, y: 1 }];
+  state.direction = { x: 1, y: 0 };
+  state.shards = [];
+  state.growth = 20; // far more than the cap could ever absorb
+
+  for (let i = 0; i < 4; i += 1) {
+    tick(state, firstCell);
+    assert.ok(state.snake.length <= 5, `the snake reached ${state.snake.length}`);
+  }
+
+  assert.equal(state.snake.length, 5, 'and it does fill up to the cap');
+  assert.equal(state.growth, 0, 'with the surplus growth discarded, not banked');
+});
+
+test('the classic modes are uncapped, as Snake has always been', () => {
+  // Wrapping walls so the run below cannot end against the right-hand edge.
+  const state = runningGame({ walls: 'wrap' });
+  assert.equal(state.config.maxSnakeLength, null);
+
+  for (let i = 0; i < 6; i += 1) {
+    state.food = { x: (state.snake[0].x + 1) % state.config.cols, y: state.snake[0].y };
+    tick(state, firstCell);
+  }
+
+  assert.equal(state.snake.length, 9);
+});
+
+test('severed scraps fade away on the clock', () => {
+  const state = descentRun();
+  state.scraps = [{ x: 3, y: 3, msLeft: 200 }, { x: 3, y: 4, msLeft: 900 }];
+
+  advanceClock(state, 300, firstCell);
+
+  assert.equal(state.scraps.length, 1, 'the older scrap should be gone');
+  assert.equal(state.scraps[0].msLeft, 600);
+});
+
+test('a retry clears the immunity and the scraps with the floor', () => {
+  const state = descentRun();
+  state.invulnerable = 1200;
+  state.scraps = [{ x: 3, y: 3, msLeft: 800 }];
+
+  crash(state);
+
+  assert.equal(state.invulnerable, 0);
+  assert.deepEqual(state.scraps, []);
 });

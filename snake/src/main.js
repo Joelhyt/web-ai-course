@@ -29,6 +29,8 @@ const depthStatEl = document.getElementById('depth-stat');
 const depthEl = document.getElementById('depth');
 const shardsStatEl = document.getElementById('shards-stat');
 const shardsEl = document.getElementById('shards');
+const livesStatEl = document.getElementById('lives-stat');
+const livesEl = document.getElementById('lives');
 const wallsLabelEl = document.getElementById('walls-label');
 const adventureHintEl = document.getElementById('adventure-hint');
 
@@ -173,6 +175,14 @@ function updateHud() {
   scoreEl.textContent = String(state.score);
   highScoreEl.textContent = String(highScore);
   statusEl.textContent = STATUS_LABEL[state.status];
+
+  livesStatEl.hidden = state.lives === null;
+  if (state.lives !== null) {
+    // Hearts rather than a number: you read "two left" off a row of hearts
+    // without parsing it, which matters when you have just lost one.
+    livesEl.textContent = '♥'.repeat(state.lives) || '—';
+    livesEl.classList.toggle('last', state.lives === 1);
+  }
 
   depthStatEl.hidden = state.depth === null;
   shardsStatEl.hidden = state.depth === null;

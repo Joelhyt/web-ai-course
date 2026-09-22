@@ -197,8 +197,18 @@ export function createGame(overrides = {}, rng = Math.random) {
     depth: config.mode === 'adventure' ? 1 : null,
     enemies: [],
     enemyCooldown: config.enemyCooldown,
+    lives: config.mode === 'adventure' ? config.startingLives : null,
+    // The floor as it was generated, kept so a retry can rebuild it exactly.
+    level: null,
+    // What the arrival banner should say about how you got here.
+    arrival: 'descended',
     // Milliseconds of slowed-down arrival left on this floor.
     grace: 0,
+    // Untouchable for a moment after a worm takes a bite out of you.
+    invulnerable: 0,
+    // Severed tail segments, fading. Decorative, and nothing reads them but the
+    // renderer — but the bite has to be legible in the moment it happens.
+    scraps: [],
     // Segments still owed to the snake. A shard is worth several, which they
     // are paid out over the following moves rather than all at once.
     growth: 0,
@@ -214,15 +224,21 @@ export function createGame(overrides = {}, rng = Math.random) {
   return state;
 }
 
-/** Moves the snake onto a freshly generated floor. */
+/**
+ * Moves the snake onto a floor — a freshly generated one, or the same one again
+ * after a death. Everything the snake touches is copied out of the level rather
+ * than aliased into it, because the round mutates all of it and a retry has to
+ * find the floor exactly as it was generated.
+ */
 function enterLevel(state, level, rng = Math.random) {
+  state.level = level;
   state.blocked = level.blocked;
-  state.snake = level.snake;
-  state.direction = level.direction;
+  state.snake = level.snake.map((seg) => ({ ...seg }));
+  state.direction = { ...level.direction };
   state.pending = [];
-  state.shards = level.shards;
+  state.shards = level.shards.map((shard) => ({ ...shard }));
   state.shardsTaken = 0;
-  state.portal = level.portal;
+  state.portal = { ...level.portal };
   state.portalOpen = level.shards.length === 0;
   state.growth = 0;
 
@@ -237,6 +253,8 @@ function enterLevel(state, level, rng = Math.random) {
   state.enemies = placeSleepers(state, level.depth, rng);
   state.enemyCooldown = state.config.enemyCooldown;
   state.grace = state.config.graceMs;
+  state.invulnerable = 0;
+  state.scraps = [];
 }
 
 /**
@@ -406,14 +424,18 @@ export function advanceClock(state, dt, rng = Math.random) {
   advancePowerUps(state, dt, rng);
 
   if (state.grace > 0) state.grace = Math.max(0, state.grace - dt);
+  if (state.invulnerable > 0) state.invulnerable = Math.max(0, state.invulnerable - dt);
+  if (state.scraps.length > 0) {
+    for (const scrap of state.scraps) scrap.msLeft -= dt;
+    state.scraps = state.scraps.filter((scrap) => scrap.msLeft > 0);
+  }
 
   // Enemies move on the clock rather than on the snake's moves, which is how
   // their pace stays a fixed fraction of yours however fast you are going.
+  // A worm reaching the snake's *head* is the only thing here that costs a
+  // life; everything else it can do is a bite, which advanceEnemies applies.
   if (state.depth !== null && advanceEnemies(state, dt, effectiveInterval(state), rng)) {
-    if (!isEffectActive(state, 'ghost')) {
-      state.status = 'over';
-      return state;
-    }
+    if (!isEffectActive(state, 'ghost')) return die(state, rng);
   }
 
   if (state.timeLeft !== null) {
@@ -432,8 +454,43 @@ export function advanceClock(state, dt, rng = Math.random) {
 function descend(state, rng) {
   state.depth += 1;
   state.score += state.config.depthBonus;
+
+  const { lifeEveryLevels, maxLives } = state.config;
+  const earnedLife = (state.depth - 1) % lifeEveryLevels === 0 && state.lives < maxLives;
+  if (earnedLife) state.lives += 1;
+
   enterLevel(state, generateLevel(state.config, state.depth, rng), rng);
+  state.arrival = earnedLife ? 'life-earned' : 'descended';
   updateSpeed(state);
+}
+
+/**
+ * The end of a life. In Adventure that means the floor starts over rather than
+ * the run ending, as long as there is a life left to spend.
+ *
+ * The shards already taken on this floor are refunded out of the score along
+ * with the floor itself. Otherwise a death would be a way to farm the same
+ * shards again, and the score would stop meaning how deep you got.
+ */
+function die(state, rng) {
+  // No lives left, or no generated floor to rebuild (the other two modes, and
+  // the hand-built boards the rules are tested on): the run is over.
+  if (state.lives === null || state.lives <= 0 || !state.level) {
+    state.status = 'over';
+    return state;
+  }
+
+  state.lives -= 1;
+  state.score = Math.max(0, state.score - state.shardsTaken);
+  state.invulnerable = 0;
+  state.scraps = [];
+  enterLevel(state, state.level, rng);
+  state.arrival = 'retry';
+
+  // Power-ups do not survive the snake that collected them.
+  for (const type of POWER_UP_TYPES) state.effects[type] = 0;
+
+  return state;
 }
 
 /** Advances the game by exactly one move. Mutates and returns `state`. */
@@ -452,24 +509,17 @@ export function tick(state, rng = Math.random) {
   state.direction = dir;
 
   const { x, y, outOfBounds } = nextHead(state, dir);
-  if (outOfBounds) {
-    state.status = 'over';
-    return state;
-  }
+  if (outOfBounds) return die(state, rng);
 
   // Rock is rock. Ghost makes the snake insubstantial to *itself*, not to the
   // dungeon — a wall-phasing snake would make every floor's layout irrelevant.
-  if (isWall(state, x, y)) {
-    state.status = 'over';
-    return state;
-  }
+  if (isWall(state, x, y)) return die(state, rng);
 
-  // Ghost phases through worms as well as through yourself — but never through
-  // rock. Being hunted is exactly when the power-up should be worth finding.
-  if (!isEffectActive(state, 'ghost') && enemyHits(state, { x, y })) {
-    state.status = 'over';
-    return state;
-  }
+  // Steering into a hunting worm is the one contact that still costs a life —
+  // that one is yours. Ghost phases through worms as well as through yourself
+  // (but never through rock), and so does the moment of immunity after a bite.
+  const untouchable = isEffectActive(state, 'ghost') || state.invulnerable > 0;
+  if (!untouchable && enemyHits(state, { x, y })) return die(state, rng);
 
   const head = { x, y };
   const onFood = state.food !== null && cellsEqual(head, state.food);
@@ -486,10 +536,7 @@ export function tick(state, rng = Math.random) {
   if (!isEffectActive(state, 'ghost')) {
     const bodyLength = owed > 0 ? state.snake.length : state.snake.length - 1;
     for (let i = 0; i < bodyLength; i += 1) {
-      if (cellsEqual(state.snake[i], head)) {
-        state.status = 'over';
-        return state;
-      }
+      if (cellsEqual(state.snake[i], head)) return die(state, rng);
     }
   }
 
@@ -499,6 +546,14 @@ export function tick(state, rng = Math.random) {
     state.growth = owed - 1;
   } else {
     state.snake.pop();
+  }
+
+  // Adventure caps the length: past it the tail dissolves into the dark rather
+  // than turning every shard into more hitbox than the floor has room for.
+  const { maxSnakeLength } = state.config;
+  if (maxSnakeLength && state.snake.length >= maxSnakeLength) {
+    while (state.snake.length > maxSnakeLength) state.snake.pop();
+    state.growth = 0;
   }
 
   if (onFood || onBonus) {

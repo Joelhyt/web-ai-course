@@ -12,7 +12,8 @@ const firstCell = () => 0;
 
 // A hand-built floor: a 12x7 room with a rock pillar in the middle of it. The
 // spawn distance is scaled down to match — the real 14 tiles is most of this
-// arena — and the tests that care about that distance set it themselves.
+// arena — and the tests that care about that distance set it themselves. No
+// lives, so being caught ends the run here instead of restarting the floor.
 function arena(overrides = {}) {
   const state = createGame({
     cols: 12,
@@ -20,6 +21,7 @@ function arena(overrides = {}) {
     mode: 'adventure',
     powerUpChance: 0,
     enemyChance: 0,
+    startingLives: 0,
     enemySpawnDistance: 5,
     ...overrides,
   }, firstCell);
@@ -239,7 +241,7 @@ test('nothing surfaces during the landing grace', () => {
 });
 
 test('the number of hunters is capped by the depth', () => {
-  for (const [depth, cap] of [[3, 1], [6, 2], [12, 3], [30, 3]]) {
+  for (const [depth, cap] of [[3, 1], [6, 2], [12, 2], [30, 2]]) {
     const state = arena({
       enemyChance: 1000, enemyCooldown: 0, cols: 60, rows: 45, enemySpawnDistance: 14,
     });
@@ -282,4 +284,96 @@ test('a surfacing worm is a warning, not yet a threat', () => {
   crawler.body = [{ x: 3, y: 3 }, { x: 4, y: 3 }];
   tick(state, firstCell);
   assert.equal(state.status, 'over');
+});
+
+// --- Biting -----------------------------------------------------------------
+
+test('a worm reaching your body takes the tail, not the run', () => {
+  const state = arena();
+  state.snake = [{ x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }, { x: 2, y: 4 }, { x: 1, y: 4 }];
+  const enemy = hunter(state, [{ x: 4, y: 3 }, { x: 5, y: 3 }]);
+
+  advanceEnemies(state, 1000, 120, firstCell);
+
+  assert.equal(state.status, 'running');
+  assert.equal(state.lives, 0, 'a bite must not spend a life');
+  assert.deepEqual(state.snake, [{ x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }]);
+  assert.equal(state.scraps.length, 2, 'the severed segments are left dissolving');
+  assert.equal(enemy.phase, 'feeding');
+  assert.equal(state.invulnerable, state.config.biteImmunityMs);
+});
+
+test('a bite never leaves the snake shorter than the minimum', () => {
+  const state = arena();
+  state.snake = [{ x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }];
+  hunter(state, [{ x: 4, y: 3 }, { x: 5, y: 3 }]);
+
+  advanceEnemies(state, 1000, 120, firstCell);
+
+  assert.equal(state.snake.length, state.config.minSnakeLength);
+  assert.equal(state.status, 'running');
+});
+
+test('only the worm’s head bites — its body is just a worm in the way', () => {
+  const state = arena();
+  state.snake = [{ x: 3, y: 1 }, { x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }];
+  // Its head is already past the snake, so the tail it drags is what overlaps.
+  const enemy = hunter(state, [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }]);
+  enemy.accumulator = 0;
+
+  const length = state.snake.length;
+  advanceEnemies(state, 100, 120, firstCell);
+
+  assert.equal(state.snake.length, length, 'a body overlap should do nothing at all');
+  assert.equal(state.scraps.length, 0);
+});
+
+test('a feeding worm holds still and is safe to brush past', () => {
+  const state = arena();
+  state.snake = [{ x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }, { x: 2, y: 4 }];
+  const enemy = hunter(state, [{ x: 4, y: 3 }, { x: 5, y: 3 }]);
+
+  advanceEnemies(state, 1000, 120, firstCell);
+  assert.equal(enemy.phase, 'feeding');
+  const parked = enemy.body.map((seg) => ({ ...seg }));
+
+  advanceEnemies(state, state.config.enemyFeedMs - 100, 120, firstCell);
+  assert.deepEqual(enemy.body, parked, 'it moved while it was eating');
+
+  // Driving into it while it eats is safe, where a hunting worm would kill.
+  state.snake = [{ x: enemy.body[0].x - 1, y: enemy.body[0].y }, { x: enemy.body[0].x - 2, y: enemy.body[0].y }];
+  state.direction = { x: 1, y: 0 };
+  state.invulnerable = 0;
+  tick(state, firstCell);
+  assert.equal(state.status, 'running');
+
+  advanceEnemies(state, 200, 120, firstCell);
+  assert.equal(enemy.phase, 'hunting', 'and it goes back to hunting afterwards');
+});
+
+test('the immunity after a bite stops you being chewed twice over', () => {
+  const state = arena();
+  state.snake = [{ x: 3, y: 2 }, { x: 3, y: 3 }, { x: 3, y: 4 }, { x: 2, y: 4 }, { x: 1, y: 4 }];
+  hunter(state, [{ x: 4, y: 3 }, { x: 5, y: 3 }]);
+  const second = hunter(state, [{ x: 4, y: 2 }, { x: 5, y: 2 }]);
+
+  advanceEnemies(state, 1000, 120, firstCell);
+  const afterFirst = state.snake.length;
+
+  // The other worm is right on top of the snake, and gets nothing for it.
+  second.body[0] = { x: 3, y: 3 };
+  advanceEnemies(state, 400, 120, firstCell);
+
+  assert.equal(state.snake.length, afterFirst);
+  assert.equal(state.status, 'running');
+});
+
+test('a head-on meeting still costs a life', () => {
+  const state = arena({ startingLives: 2 });
+  state.snake = [{ x: 3, y: 3 }, { x: 2, y: 3 }];
+  hunter(state, [{ x: 4, y: 3 }, { x: 5, y: 3 }]);
+
+  const caught = advanceEnemies(state, 1000, 120, firstCell);
+
+  assert.equal(caught, true, 'reaching the head is the one contact that costs you');
 });

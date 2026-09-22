@@ -19,6 +19,10 @@
             <dt>Best</dt>
             <dd id="high-score">0</dd>
           </div>
+          <div class="stat" id="lives-stat" hidden>
+            <dt>Lives</dt>
+            <dd id="lives" class="hearts">♥♥♥</dd>
+          </div>
           <div class="stat" id="depth-stat" hidden>
             <dt>Depth</dt>
             <dd id="depth">1</dd>
@@ -63,10 +67,13 @@
           view scrolls with you, the corner map shows the whole floor, and
           chevrons at the edge point to whatever is off screen. Take all the
           shards to unlock the portal, then slip through to descend. The walls
-          are solid — Ghost will not carry you through rock. From depth 3 the
+          are solid — Ghost will not carry you through rock. You have three
+          lives: dying puts you back at the start of the same floor with its
+          shards restored, and every fifth floor earns one back. From depth 3 the
           floors are inhabited: sleepers lie coiled until you come close, and
-          crawlers surface and hunt. Both are slower than you, both announce
-          themselves before they move, and both fade away — Ghost phases you
+          crawlers surface and hunt. A worm that reaches your body bites the tail
+          off behind it and stops to eat — you come out shorter and briefly
+          untouchable. Only a head-on meeting costs a life. Ghost phases you
           through them.
         </p>
         <ul class="legend">

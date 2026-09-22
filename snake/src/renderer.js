@@ -137,6 +137,7 @@ function drawEnemies(ctx, state, cell, time) {
   for (const enemy of state.enemies) {
     const dormant = enemy.phase === 'dormant';
     const waking = enemy.phase === 'waking';
+    const feeding = enemy.phase === 'feeding';
     const fading = enemy.phase === 'hunting' && enemy.msLeft <= state.config.enemyFadeMs;
 
     const base = enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler;
@@ -201,6 +202,38 @@ function drawEnemies(ctx, state, cell, time) {
       ctx.arc(hx, hy, cell * (0.3 + pulse * 0.9), 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    if (feeding) {
+      // Chewing: a head that swells and shrinks on the spot. It has to be
+      // obvious that this one has stopped, because that is your way out.
+      const chew = 0.34 + Math.abs(Math.sin(time / 110)) * 0.16;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = base;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * chew, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = COLORS.background;
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(hx + sign * cell * 0.13, hy - cell * 0.06, cell * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+/** What is left of a severed tail, dissolving where it was bitten off. */
+function drawScraps(ctx, state, cell) {
+  for (const scrap of state.scraps) {
+    const progress = scrap.msLeft / state.config.scrapFadeMs;
+    ctx.save();
+    ctx.globalAlpha = progress * 0.7;
+    ctx.fillStyle = COLORS.snake;
+    const size = cell * 0.7 * progress;
+    ctx.beginPath();
+    ctx.arc(scrap.x * cell + cell / 2, scrap.y * cell + cell / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 }
@@ -465,6 +498,7 @@ function drawMagnetPull(ctx, state, cell) {
 function drawSnake(ctx, state, cell, time) {
   const { snake } = state;
   const ghost = isEffectActive(state, 'ghost');
+  const immune = state.invulnerable > 0;
   const slow = isEffectActive(state, 'slow');
   const inset = cell * 0.08;
   const size = cell - inset * 2;
@@ -485,6 +519,19 @@ function drawSnake(ctx, state, cell, time) {
     ctx.globalAlpha = ghost ? base * 0.42 : base;
     ctx.fillStyle = i === 0 ? headColor : bodyColor;
     fillCell(ctx, seg.x * cell + inset, seg.y * cell + inset, size, radius);
+  }
+
+  if (immune && !ghost) {
+    // The window after a bite. Flashing the whole snake rather than the head:
+    // what is protected is all of it, and that is the thing worth knowing.
+    ctx.globalAlpha = 0.35 + Math.abs(Math.sin(time / 90)) * 0.5;
+    ctx.strokeStyle = COLORS.title;
+    ctx.lineWidth = 2;
+    for (const seg of snake) {
+      ctx.beginPath();
+      ctx.arc(seg.x * cell + cell / 2, seg.y * cell + cell / 2, cell * 0.46, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   if (ghost) {
@@ -542,6 +589,19 @@ function drawTimeBar(ctx, state, width) {
   ctx.restore();
 }
 
+function arrivalSubtitle(state) {
+  switch (state.arrival) {
+    case 'retry':
+      return state.lives === 1
+        ? 'one life left — the floor starts over'
+        : `${state.lives} lives left — the floor starts over`;
+    case 'life-earned':
+      return 'five floors down — a life back';
+    default:
+      return 'take a breath — the floor is new';
+  }
+}
+
 /**
  * The depth announcement on arrival. It fades out over the same window as the
  * landing grace, so the banner *is* the explanation for why the snake is
@@ -551,18 +611,20 @@ function drawArrivalBanner(ctx, state, width, height) {
   if (state.grace <= 0 || state.status !== 'running') return;
 
   const progress = state.grace / state.config.graceMs;
+  const retry = state.arrival === 'retry';
+
   ctx.save();
   ctx.globalAlpha = Math.min(1, progress * 1.6);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  ctx.fillStyle = COLORS.title;
+  ctx.fillStyle = retry ? COLORS.crawler : COLORS.title;
   ctx.font = '600 30px system-ui, sans-serif';
-  ctx.fillText(`DEPTH ${state.depth}`, width / 2, height / 2 - 12);
+  ctx.fillText(retry ? 'LIFE LOST' : `DEPTH ${state.depth}`, width / 2, height / 2 - 12);
 
   ctx.fillStyle = COLORS.subtitle;
   ctx.font = '13px system-ui, sans-serif';
-  ctx.fillText('take a breath — the floor is new', width / 2, height / 2 + 16);
+  ctx.fillText(arrivalSubtitle(state), width / 2, height / 2 + 16);
   ctx.restore();
 }
 
@@ -581,7 +643,7 @@ function overlayText(state) {
       return ['PAUSED', 'Space or P to resume'];
     case 'over':
       return adventure
-        ? ['LOST IN THE DEPTHS', `Depth ${state.depth} · score ${state.score} — Enter or R to dive again`]
+        ? ['OUT OF LIVES', `Depth ${state.depth} · score ${state.score} — Enter or R to dive again`]
         : ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
     case 'timeup':
       return ["TIME'S UP", `Score ${state.score} — Enter or R to play again`];
@@ -763,6 +825,7 @@ export function render(ctx, state, time = 0, camera = { x: 0, y: 0 }) {
     drawBonusFood(ctx, crumb, cell, effectMs(state, 'feast'), time);
   }
   if (state.food) drawFood(ctx, state.food, cell);
+  drawScraps(ctx, state, cell);
   drawEnemies(ctx, state, cell, time);
   drawSnake(ctx, state, cell, time);
 

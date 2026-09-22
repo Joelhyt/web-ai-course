@@ -40,6 +40,8 @@ The snake speeds up as it grows, and the best score is kept in `localStorage`.
 
 Adventure keeps the snake and throws out the objective. There is no endless field of food: each floor is a **procedurally generated dungeon** of rooms and wide corridors, holding a handful of **shards** and one **portal**. Take every shard on the floor and the portal unlocks; slip through it and you descend to a fresh floor, one deeper. There is no win condition — the run ends when you crash, and the score is how far down you got.
 
+Because the floor is rebuilt exactly on a retry, the level it was generated as is kept on the state and everything the round touches is *copied* out of it — the round mutates the snake, the shard list and the portal, and a retry has to find them as they were.
+
 **The floor is much bigger than the screen.** The world is 60x45 tiles and the window onto it is 24x24, so the board scrolls: the camera keeps the snake centred and only drifts off-centre at the edges of the world, where chasing the head further would just scroll rock into view. Because a floor no longer fits on screen, three things navigate for you — a corner **map** of the whole floor with the current window outlined on it, **chevrons** pinned to the edge of the view pointing at off-screen shards and the portal, and a rule that collectibles only ever spawn within sight of the snake. An eight second power-up two screens away is a rumour, not an opportunity.
 
 - **Most passages are two tiles wide.** A one-wide corridor is a commitment the snake cannot turn around in, and a floor made of them is punishing rather than tense — but a few are the tense stretch of a floor, and a bad place to meet a worm. Corridors are carved with a 2x2 brush, a quarter of them as single-tile cracks instead, which works out at around 7% of the open floor. Two tests hold that line: no open tile anywhere may have fewer than two open neighbours (no dead ends, ever), and the share of single-tile passage has to stay under a fifth of the floor.
@@ -47,6 +49,8 @@ Adventure keeps the snake and throws out the objective. There is no endless fiel
 - **The snake starts in the widest room**, heading right with at least two tiles of runway. A floor that opens with the head one square from a wall is not a fair start.
 - **Shards are worth a point and two segments each**, paid out over the following moves rather than all at once. They are scattered at a distance that scales with the world, with the portal in the room furthest from you, so clearing a floor always means crossing it.
 - **Descending resets the snake, not the pace.** You squeeze through the portal at three segments again, but the speed carries over and deeper floors have more rooms and more shards. Pace comes from the *depth*, not the score: a floor pays out in lumps, and a score-driven snake would lurch faster every time you picked a shard up.
+- **Three lives, and a life back every five floors.** Dying does not end a twenty-floor run: it puts you back at the entrance of the *same* floor, laid out exactly as it was, with its shards restored and the portal locked again. The points for the shards you had already taken come back off the score with them — otherwise dying would be a way to farm the same floor, and the score would stop meaning how deep you got. Power-ups do not survive the snake that collected them, and the landing grace applies to a retry too. Clearing floors 6, 11, 16… earns a life back, capped at five so a deep run cannot stockpile its way out of the difficulty curve. The HUD shows them as hearts, which pulse on the last one; running out is what finally ends the run.
+
 - **Arriving on a floor is slowed down.** You cannot see what is around you the moment you land, and at depth 12 the normal pace means dying to a wall you never had a chance to read. The snake arrives at a crawl under a `DEPTH n` banner and winds back up to full speed over 2.2 seconds — the interval multiplier decays to 1 rather than switching off, so there is no jolt at the end of it. Nothing surfaces during the grace either; the floor gets to be quiet while you work out where you are.
 
 - **Rock is rock.** Ghost makes the snake insubstantial to itself, not to the dungeon — a wall-phasing snake would make every floor's layout irrelevant. Magnet drags shards, but the pull is blocked by rock, so it gathers a room up without hauling the objective to you through the corridors. The wall-mode control steps aside in Adventure; the dungeon decides.
@@ -58,16 +62,25 @@ From **depth 3** the floors are inhabited. There are two, and they are deliberat
 
 | | |
 |---|---|
-| **Sleeper** | Coiled on the floor when you arrive, dim and visibly asleep. It wakes only if you come within six tiles, then hunts for eleven seconds and fades. It is part of the level: you can see one from across a room and decide to go around it. |
-| **Crawler** | Surfaces somewhere on the floor mid-run and comes for you. It spends a motionless moment surfacing first, hunts for sixteen seconds, then fades out. At most one at depth 3, two at 6, three from 9. |
+| **Sleeper** | Coiled on the floor when you arrive, dim and visibly asleep. It wakes only if you come within six tiles, then hunts for eleven seconds and fades. It is part of the level: you can see one from across a room and decide to go around it. At most two per floor. |
+| **Crawler** | Surfaces somewhere on the floor mid-run and comes for you. It spends a motionless moment surfacing first, hunts for sixteen seconds, then fades out. One from depth 3, two from depth 6. |
+
+**A worm that reaches you bites, it does not kill.** Its head landing on your body severs everything behind that point: you come out shorter, the worm stops for two seconds to eat what it took, and you are untouchable for a second and a half while you get clear. Only a head-on meeting — or steering your own head into a hunting worm — costs a life. Its *body* dragging over yours does nothing at all.
+
+That rule replaced killing on contact, which was unsurvivable for a structural reason rather than a numeric one: the collision test was every enemy segment against every snake segment, so a worm's tail brushing your tail was fatal; a long snake is a long hitbox; the worm paths to your head and therefore travels alongside your body; and being slower than you buys nothing when everything you are dragging is lethal. Being bitten is now often a *relief* — it is the thing that shortens you enough to get out of the corridor you were trapped in. In a simulation of a bot that ignores enemies completely, three quarters of all contacts now resolve as a bite rather than a lost life.
+
+The snake is also **capped at twelve segments in Adventure**: past that the tail dissolves into the dark. Shards still score the same, you just stop turning points into more hitbox than a two-tile corridor has room for — a seven-shard floor used to leave you seventeen segments long.
 
 Three guarantees make them fair rather than frustrating, and each is enforced by a test:
 
-1. **Nothing ever moves faster than the snake.** Their pace is a multiple (1.55x) of the snake's *current* interval — not a fixed speed — so it holds whether you are racing at depth 20 or crawling under a Slow. Tying it to the current interval also means Slow can never turn into a trap by making a worm relatively faster.
+1. **Nothing ever moves faster than the snake.** Their pace is a multiple (1.8x) of the snake's *current* interval — not a fixed speed — so it holds whether you are racing at depth 20 or crawling under a Slow. Tying it to the current interval also means Slow can never turn into a trap by making a worm relatively faster.
 2. **Nothing appears next to you, and nothing attacks the moment it appears.** Crawlers surface at least 14 tiles away and are harmless while they do it — dashing past a surfacing worm is meant to work. Sleepers are on the map before you enter the room, and are never placed within waking distance of the portal you are forced to walk onto.
-3. **Nothing is permanent.** Every hunt is on a timer and spends its last 2.5 seconds visibly fading out.
+3. **Nothing is permanent.** Every hunt is on a timer and spends its last 2.5 seconds visibly fading out — and a worm that stops to feed spends that time out of its own hunt.
+4. **Nothing hits you twice in a row.** The immunity after a bite covers the moment when a second worm is right on top of you, which is exactly when the first rule would otherwise stop meaning anything.
 
 They hunt with a breadth-first search through the floor rather than a greedy step toward you: a greedy chaser wedges itself against the first wall between you and it, which reads as a broken enemy rather than a beatable one. The search is capped so a hunt across a large floor stays cheap, and an enemy that cannot reach you simply stops.
+
+A feeding worm is drawn chewing on the spot, the severed tail dissolves where it was taken, and the snake flashes white while it is immune: a new rule has to be legible in the moment it fires, and watching your own tail come off says what happened better than any HUD counter.
 
 **Ghost phases you through worms** as well as through yourself — never through rock. Being hunted is exactly when the power-up should be worth finding. Hunting enemies also get an edge chevron and a dot on the minimap, so a worm closing in from off screen is something you are told about rather than something that happens to you.
 
@@ -142,4 +155,4 @@ The details that separate this from a naive Snake, and the ones worth comparing 
 | Model | Claude Opus 5 (Claude Code) |
 | Approach | Plan mode: requirements clarified up front, then implemented from an approved plan |
 | Dependencies | None |
-| Tests | 80, via `node --test` |
+| Tests | 96, via `node --test` |

@@ -8,6 +8,14 @@
 //   sleeper — already coiled on the floor when you arrive, visible and asleep.
 //     It only wakes if you come close, hunts for a shorter burst, then fades.
 //
+// What a worm does when it reaches you is the whole design. It *bites*: the
+// tail behind the bite is severed, the worm stops to feed on it, and you are
+// briefly untouchable. Only a head-on meeting costs a life. Killing on contact
+// anywhere was unsurvivable, and for a structural reason rather than a numeric
+// one — a long snake is a long hitbox, the worm paths to your head and so
+// travels alongside your body, and being slower than you buys nothing when
+// every segment you are dragging is lethal to touch.
+//
 // The three guarantees that make them fair rather than frustrating:
 //
 //   1. Nothing ever moves faster than the snake. Their pace is a multiple of
@@ -41,6 +49,34 @@ export function enemyHits(state, cell) {
   return state.enemies.some(
     (enemy) => enemy.phase === 'hunting' && enemy.body.some((seg) => same(seg, cell)),
   );
+}
+
+/**
+ * The bite. Everything behind the segment the worm's head landed on is severed
+ * — never taking the snake below `minSnakeLength`, so a bite near the head is
+ * survivable rather than fatal by another name — and the worm stops to feed on
+ * what it took, which is the window you use to get clear.
+ *
+ * The severed segments are handed back as scraps: purely decorative, but a new
+ * rule has to be legible in the moment it fires, and watching your own tail
+ * dissolve says what happened better than any HUD counter.
+ */
+function bite(state, enemy, index) {
+  const keep = Math.max(state.config.minSnakeLength, index);
+  const severed = state.snake.slice(keep);
+  state.snake = state.snake.slice(0, keep);
+
+  for (const seg of severed) {
+    state.scraps.push({ x: seg.x, y: seg.y, msLeft: state.config.scrapFadeMs });
+  }
+
+  // Anything still owed to a snake that just lost its tail is forfeit.
+  state.growth = 0;
+  state.invulnerable = state.config.biteImmunityMs;
+
+  enemy.phase = 'feeding';
+  enemy.phaseMs = state.config.enemyFeedMs;
+  return severed.length;
 }
 
 function blockedFor(state, enemy) {
@@ -182,7 +218,10 @@ export function placeSleepers(state, depth, rng = Math.random) {
   const { cols, rows, enemyFromDepth, enemySpawnDistance } = state.config;
   if (depth < enemyFromDepth) return [];
 
-  const count = Math.min(3, Math.floor((depth - enemyFromDepth) / 2) + 1);
+  const count = Math.min(
+    state.config.maxSleepers,
+    Math.floor((depth - enemyFromDepth) / 2) + 1,
+  );
   const head = state.snake[0];
   const sleepers = [];
 
@@ -243,12 +282,27 @@ export function advanceEnemies(state, dt, interval, rng = Math.random) {
       continue;
     }
 
+    if (enemy.phase === 'feeding') {
+      // Busy with what it bit off: motionless, and harmless to brush past.
+      // The hunt timer keeps running, so a bite costs it part of its own life.
+      enemy.msLeft -= dt;
+      enemy.phaseMs -= dt;
+      if (enemy.phaseMs <= 0) enemy.phase = 'hunting';
+      continue;
+    }
+
     enemy.msLeft -= dt;
     enemy.accumulator += dt;
-    while (enemy.accumulator >= step && enemy.msLeft > 0) {
+    while (enemy.accumulator >= step && enemy.msLeft > 0 && enemy.phase === 'hunting') {
       enemy.accumulator -= step;
       moveEnemy(state, enemy);
-      if (enemy.body.some((seg) => state.snake.some((part) => same(seg, part)))) caught = true;
+
+      // Only the worm's head does anything, and only to the snake it lands on:
+      // its body dragging over your tail is just a worm in the way.
+      if (state.invulnerable > 0) continue;
+      const index = state.snake.findIndex((part) => same(part, enemy.body[0]));
+      if (index === 0) caught = true;
+      else if (index > 0) bite(state, enemy, index);
     }
   }
 
@@ -258,7 +312,7 @@ export function advanceEnemies(state, dt, interval, rng = Math.random) {
   // while you work out where you are.
   if (state.depth >= state.config.enemyFromDepth && state.grace <= 0) {
     const hunters = state.enemies.filter((enemy) => enemy.kind === 'crawler').length;
-    const allowed = Math.min(3, Math.floor(state.depth / 3));
+    const allowed = Math.min(state.config.maxHunters, Math.floor(state.depth / 3));
 
     if (hunters < allowed && state.enemyCooldown > 0) {
       state.enemyCooldown -= dt;
