@@ -5,9 +5,9 @@ export const DEFAULTS = Object.freeze({
   rows: 20,
   cell: 24, // CSS pixels per grid square
 
-  baseInterval: 140, // ms between moves at score 0
+  baseInterval: 120, // ms between moves at score 0
   minInterval: 60, // fastest the game is allowed to get
-  speedStep: 4, // ms shaved off the interval per food eaten
+  speedStep: 1, // ms shaved off the interval per food eaten
 
   walls: 'solid', // 'solid' ends the round on contact, 'wrap' teleports to the far side
 
