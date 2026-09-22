@@ -213,6 +213,18 @@ kbd {
 .icon.magnet { fill: #fbbf24; }
 .icon.feast { fill: #f472b6; }
 
+.hint {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #67e8f9;
+  border-radius: 7px;
+  background: var(--panel);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
 /* The time attack clock, ticking red over the last ten seconds. */
 #time.urgent {
   color: #f87171;

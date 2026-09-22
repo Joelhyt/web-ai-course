@@ -9,7 +9,7 @@ import {
   effectiveInterval,
   effectMs,
 } from './game.js';
-import { render, resizeCanvas } from './renderer.js';
+import { render, resizeCanvas, viewSize } from './renderer.js';
 import { attachKeyboard } from './input.js';
 import { loadHighScore, saveHighScore } from './storage.js';
 import { POWER_UPS, POWER_UP_TYPES } from './config.js';
@@ -25,13 +25,41 @@ const modeEl = document.getElementById('mode');
 const effectsEl = document.getElementById('effects');
 const timeStatEl = document.getElementById('time-stat');
 const timeEl = document.getElementById('time');
+const depthStatEl = document.getElementById('depth-stat');
+const depthEl = document.getElementById('depth');
+const shardsStatEl = document.getElementById('shards-stat');
+const shardsEl = document.getElementById('shards');
+const wallsLabelEl = document.getElementById('walls-label');
+const adventureHintEl = document.getElementById('adventure-hint');
 
-const settings = () => ({ walls: wallsEl.value, mode: modeEl.value });
+// createGame layers the mode's own preset over these. Adventure is not given a
+// wall setting at all: its dungeon has its own edges, and an override here
+// would beat the preset and wrap the snake through solid rock.
+const settings = () => (modeEl.value === 'adventure'
+  ? { mode: 'adventure' }
+  : { walls: wallsEl.value, mode: modeEl.value });
 
 let highScore = loadHighScore(modeEl.value);
 let state = createGame(settings());
 let lastFrame = performance.now();
 let accumulator = 0;
+let camera = { x: 0, y: 0 };
+
+/**
+ * Where the window wants to be: centred on the head, clamped so it never runs
+ * off the edge of the world. The clamp is why the snake sits dead centre in the
+ * middle of a floor but drifts off-centre near its walls — chasing the head
+ * past the edge would just scroll rock into view.
+ */
+function cameraTarget() {
+  const view = viewSize(state.config);
+  const head = state.snake[0];
+  const clamp = (value, max) => Math.min(Math.max(value, 0), Math.max(0, max));
+  return {
+    x: clamp(head.x + 0.5 - view.cols / 2, state.config.cols - view.cols),
+    y: clamp(head.y + 0.5 - view.rows / 2, state.config.rows - view.rows),
+  };
+}
 
 resizeCanvas(canvas, ctx, state.config);
 
@@ -39,6 +67,18 @@ function restart() {
   state = createGame(settings());
   highScore = loadHighScore(state.config.mode);
   accumulator = 0;
+  // Modes do not share a board size, so the canvas is resized on every restart
+  // rather than only when the window changes.
+  resizeCanvas(canvas, ctx, state.config);
+  camera = cameraTarget(); // snap, rather than sweeping in from the last round
+  syncModeControls();
+}
+
+// Wall behaviour is Adventure's to decide, so its control steps aside there.
+function syncModeControls() {
+  const adventure = state.config.mode === 'adventure';
+  wallsLabelEl.hidden = adventure;
+  adventureHintEl.hidden = !adventure;
 }
 
 function togglePause() {
@@ -59,6 +99,9 @@ attachKeyboard({
   onTogglePause: togglePause,
   onRestart: restart,
 });
+
+camera = cameraTarget();
+syncModeControls();
 
 // Switching wall behaviour or mode mid-round would be ambiguous, so either
 // starts a fresh one.
@@ -131,6 +174,17 @@ function updateHud() {
   highScoreEl.textContent = String(highScore);
   statusEl.textContent = STATUS_LABEL[state.status];
 
+  depthStatEl.hidden = state.depth === null;
+  shardsStatEl.hidden = state.depth === null;
+  if (state.depth !== null) {
+    depthEl.textContent = String(state.depth);
+    // Counting up to the floor's total reads better than counting down to zero:
+    // the target is visible from the first shard.
+    const total = state.shards.length + state.shardsTaken;
+    shardsEl.textContent = `${state.shardsTaken}/${total}`;
+    shardsEl.classList.toggle('urgent', state.portalOpen);
+  }
+
   timeStatEl.hidden = state.timeLeft === null;
   if (state.timeLeft !== null) {
     timeEl.textContent = formatClock(state.timeLeft);
@@ -173,8 +227,17 @@ function frame(now) {
     accumulator = 0;
   }
 
+  // Exponential smoothing on the real delta, so the scroll feels the same at
+  // 60Hz and 144Hz instead of being however far a fixed fraction gets per frame.
+  const target = cameraTarget();
+  const follow = 1 - Math.exp(-delta / 70);
+  camera = {
+    x: camera.x + (target.x - camera.x) * follow,
+    y: camera.y + (target.y - camera.y) * follow,
+  };
+
   updateHud();
-  render(ctx, state, now);
+  render(ctx, state, now, camera);
   requestAnimationFrame(frame);
 }
 

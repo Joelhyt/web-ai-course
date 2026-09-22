@@ -8,10 +8,19 @@ import { isEffectActive, effectMs } from './game.js';
  * soft on HiDPI and 4K monitors, because the backing store would be stretched.
  * setTransform (rather than scale) keeps repeated calls from compounding.
  */
+/** The window onto the world, in tiles. The whole grid unless a mode scrolls. */
+export function viewSize(config) {
+  return {
+    cols: config.viewCols ?? config.cols,
+    rows: config.viewRows ?? config.rows,
+  };
+}
+
 export function resizeCanvas(canvas, ctx, config) {
   const dpr = window.devicePixelRatio || 1;
-  const cssWidth = config.cols * config.cell;
-  const cssHeight = config.rows * config.cell;
+  const view = viewSize(config);
+  const cssWidth = view.cols * config.cell;
+  const cssHeight = view.rows * config.cell;
 
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
@@ -51,6 +60,157 @@ function drawGrid(ctx, cols, rows, cell) {
     ctx.lineTo(cols * cell, r * cell + 0.5);
   }
   ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
+// Adventure
+// ---------------------------------------------------------------------------
+
+/**
+ * A cheap deterministic hash per tile. Rock needs to look like rubble rather
+ * than graph paper, and a hash gives every tile a stable shade — no noise
+ * texture to ship, and no flicker between frames from a random().
+ */
+function tileNoise(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+/**
+ * The floor is painted light and the rock dark, rather than the other way
+ * round: a room has to read as space carved out of the mass at a glance, while
+ * the snake is moving through it.
+ */
+function drawDungeon(ctx, state, cell, bounds) {
+  const { cols } = state.config;
+
+  for (let y = bounds.top; y <= bounds.bottom; y += 1) {
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      const shade = tileNoise(x, y);
+      const left = x * cell;
+      const top = y * cell;
+
+      if (state.blocked.has(y * cols + x)) {
+        ctx.fillStyle = shade > 0.62 ? COLORS.rockDeep : COLORS.rock;
+        ctx.fillRect(left, top, cell, cell);
+
+        // Only rock with open floor above it gets a lit face, which is what
+        // gives the rooms an edge instead of a flat silhouette.
+        if (y > 0 && !state.blocked.has((y - 1) * cols + x)) {
+          ctx.fillStyle = COLORS.rockEdge;
+          ctx.fillRect(left, top, cell, 2);
+        }
+      } else {
+        ctx.fillStyle = shade > 0.7 ? COLORS.floorAlt : COLORS.floor;
+        ctx.fillRect(left, top, cell, cell);
+      }
+    }
+  }
+
+  // Flagstone seams, on the floor only. Running the grid across the rock as
+  // well is what made the first version read as graph paper with blobs on it.
+  ctx.strokeStyle = COLORS.floorGrid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = bounds.top; y <= bounds.bottom; y += 1) {
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      if (state.blocked.has(y * cols + x)) continue;
+      if (x + 1 < cols && !state.blocked.has(y * cols + x + 1)) {
+        ctx.moveTo((x + 1) * cell + 0.5, y * cell);
+        ctx.lineTo((x + 1) * cell + 0.5, (y + 1) * cell);
+      }
+      if (!state.blocked.has((y + 1) * cols + x)) {
+        ctx.moveTo(x * cell, (y + 1) * cell + 0.5);
+        ctx.lineTo((x + 1) * cell, (y + 1) * cell + 0.5);
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+/** Shards: slowly spinning diamonds, the thing a floor is actually about. */
+function drawShards(ctx, state, cell, time) {
+  for (const shard of state.shards) {
+    const cx = shard.x * cell + cell / 2;
+    const cy = shard.y * cell + cell / 2;
+    const r = cell * (0.34 + Math.sin(time / 320 + shard.x + shard.y) * 0.035);
+
+    ctx.save();
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 0.72);
+    glow.addColorStop(0, `${COLORS.shard}55`);
+    glow.addColorStop(1, `${COLORS.shard}00`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - cell, cy - cell, cell * 2, cell * 2);
+
+    // Rotating about the tile centre, undone by the restore below, so the
+    // canvas transform the caller set up (devicePixelRatio) survives.
+    ctx.translate(cx, cy);
+    ctx.rotate(time / 900 + shard.x);
+
+    ctx.fillStyle = COLORS.shard;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.62, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r * 0.62, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // A facet highlight, so the diamond has a front face while it turns.
+    ctx.fillStyle = COLORS.title;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.62, 0);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * The way down. Locked it is inert grey; with the last shard taken it turns
+ * green and starts pulling its rings inward, which is the only prompt the
+ * player gets that the floor is done.
+ */
+function drawPortal(ctx, state, cell, time) {
+  const { portal, portalOpen } = state;
+  const cx = portal.x * cell + cell / 2;
+  const cy = portal.y * cell + cell / 2;
+  const color = portalOpen ? COLORS.portalOpen : COLORS.portalLocked;
+
+  ctx.save();
+  if (portalOpen) {
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 1.1);
+    glow.addColorStop(0, `${color}55`);
+    glow.addColorStop(1, `${color}00`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - cell * 1.2, cy - cell * 1.2, cell * 2.4, cell * 2.4);
+  }
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  for (let ring = 0; ring < 3; ring += 1) {
+    // Open, the rings drift inward; locked, they just sit there.
+    const phase = portalOpen ? ((time / 1100 + ring / 3) % 1) : ring / 3;
+    const r = cell * (0.12 + (1 - phase) * 0.34);
+    ctx.globalAlpha = portalOpen ? 0.35 + phase * 0.5 : 0.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (!portalOpen) {
+    // A keyhole bar, to say "locked" without a word of UI.
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - cell * 0.2, cy);
+    ctx.lineTo(cx + cell * 0.2, cy);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawFood(ctx, food, cell) {
@@ -307,15 +467,21 @@ function drawTimeBar(ctx, state, width) {
 
 function overlayText(state) {
   const timed = state.config.mode === 'time';
+  const adventure = state.config.mode === 'adventure';
   switch (state.status) {
     case 'ready':
+      if (adventure) {
+        return ['THE DESCENT', 'Take every shard to open the way down'];
+      }
       return timed
         ? ['TIME ATTACK', `${Math.round(state.config.timeLimit / 1000)} seconds — press Space or an arrow key`]
         : ['SNAKE', 'Press Space or an arrow key to start'];
     case 'paused':
       return ['PAUSED', 'Space or P to resume'];
     case 'over':
-      return ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
+      return adventure
+        ? ['LOST IN THE DEPTHS', `Depth ${state.depth} · score ${state.score} — Enter or R to dive again`]
+        : ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
     case 'timeup':
       return ["TIME'S UP", `Score ${state.score} — Enter or R to play again`];
     case 'won':
@@ -344,15 +510,136 @@ function drawOverlay(ctx, state, width, height) {
   ctx.fillText(lines[1], width / 2, height / 2 + 22);
 }
 
-export function render(ctx, state, time = 0) {
+/**
+ * Chevrons pinned to the edge of the window, pointing at the shards and the
+ * portal while they are off screen. The minimap says where things are on the
+ * floor; these say which way to turn without looking away from the snake.
+ */
+function drawOffscreenMarkers(ctx, state, camera, view, cell) {
+  const width = view.cols * cell;
+  const height = view.rows * cell;
+  const margin = 11;
+
+  const targets = state.shards.map((shard) => ({ cell: shard, color: COLORS.shard }));
+  if (state.portal) {
+    targets.push({
+      cell: state.portal,
+      color: state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked,
+    });
+  }
+
+  for (const target of targets) {
+    const x = (target.cell.x - camera.x) * cell + cell / 2;
+    const y = (target.cell.y - camera.y) * cell + cell / 2;
+    if (x >= 0 && y >= 0 && x <= width && y <= height) continue;
+
+    const px = Math.min(Math.max(x, margin), width - margin);
+    const py = Math.min(Math.max(y, margin), height - margin);
+    const angle = Math.atan2(y - py, x - px);
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = target.color;
+    ctx.beginPath();
+    ctx.moveTo(7, 0);
+    ctx.lineTo(-4, 5);
+    ctx.lineTo(-4, -5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * A corner map of the whole floor. With a world four times the size of the
+ * window, the player needs to see the shape of the place they are in — without
+ * it, exploring a scrolling dungeon is guesswork.
+ */
+function drawMinimap(ctx, state, camera, view, cell) {
+  const { cols, rows } = state.config;
+  const scale = Math.max(1, Math.round(110 / cols));
+  const mapW = cols * scale;
+  const mapH = rows * scale;
+  const pad = 5;
+  const left = view.cols * cell - mapW - pad * 2 - 8;
+  const top = view.rows * cell - mapH - pad * 2 - 8;
+
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  ctx.fillStyle = 'rgba(6, 9, 14, 0.9)';
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(left + 0.5, top + 0.5, mapW + pad * 2, mapH + pad * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  const ox = left + pad;
+  const oy = top + pad;
+
+  // Open floor only: drawing the rock as well would just fill the panel in.
+  ctx.fillStyle = '#243141';
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (state.blocked.has(y * cols + x)) continue;
+      ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+    }
+  }
+
+  const dot = (cellPos, color, size = scale + 1) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + cellPos.x * scale - (size - scale) / 2, oy + cellPos.y * scale - (size - scale) / 2, size, size);
+  };
+
+  for (const shard of state.shards) dot(shard, COLORS.shard, scale + 2);
+  if (state.portal) dot(state.portal, state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked, scale + 2);
+  for (const seg of state.snake) dot(seg, COLORS.snake, scale);
+  dot(state.snake[0], COLORS.title, scale + 2);
+
+  // The window itself, so the map and the board can be read against each other.
+  ctx.strokeStyle = 'rgba(226, 232, 240, 0.5)';
+  ctx.strokeRect(
+    ox + camera.x * scale + 0.5,
+    oy + camera.y * scale + 0.5,
+    view.cols * scale,
+    view.rows * scale,
+  );
+  ctx.restore();
+}
+
+export function render(ctx, state, time = 0, camera = { x: 0, y: 0 }) {
   const { cols, rows, cell } = state.config;
-  const width = cols * cell;
-  const height = rows * cell;
+  const view = viewSize(state.config);
+  const width = view.cols * cell;
+  const height = view.rows * cell;
+  const scrolls = view.cols < cols || view.rows < rows;
 
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
 
-  drawGrid(ctx, cols, rows, cell);
+  // Whole pixels: a camera parked on a fraction of a tile blurs every wall edge
+  // and makes the 1px floor seams shimmer as it moves.
+  const offsetX = Math.round(camera.x * cell);
+  const offsetY = Math.round(camera.y * cell);
+
+  ctx.save();
+  ctx.translate(-offsetX, -offsetY);
+
+  const bounds = {
+    left: Math.max(0, Math.floor(camera.x) - 1),
+    right: Math.min(cols - 1, Math.ceil(camera.x + view.cols) + 1),
+    top: Math.max(0, Math.floor(camera.y) - 1),
+    bottom: Math.min(rows - 1, Math.ceil(camera.y + view.rows) + 1),
+  };
+
+  // Adventure paints its own floor, seams included, so the plain grid would
+  // only show through the rock.
+  if (state.blocked.size > 0) drawDungeon(ctx, state, cell, bounds);
+  else drawGrid(ctx, cols, rows, cell);
+  if (state.portal) drawPortal(ctx, state, cell, time);
+  drawShards(ctx, state, cell, time);
   if (isEffectActive(state, 'magnet')) drawMagnetPull(ctx, state, cell);
   if (state.powerUp) drawPowerUp(ctx, state.powerUp, cell, time);
   for (const crumb of state.bonusFood) {
@@ -360,6 +647,16 @@ export function render(ctx, state, time = 0) {
   }
   if (state.food) drawFood(ctx, state.food, cell);
   drawSnake(ctx, state, cell, time);
+
+  ctx.restore();
+
+  // Everything from here is pinned to the window, not to the world.
+  if (scrolls) {
+    // Markers first: the minimap is an opaque panel and should cover a chevron
+    // that happens to land under it, not the other way round.
+    drawOffscreenMarkers(ctx, state, camera, view, cell);
+    drawMinimap(ctx, state, camera, view, cell);
+  }
   drawEffectFrames(ctx, state, width, height);
   drawTimeBar(ctx, state, width);
   drawOverlay(ctx, state, width, height);

@@ -1,7 +1,8 @@
 // Pure game rules. Nothing in this file touches the DOM, the canvas, or storage,
 // which is what lets the whole rule set be tested in plain Node.
 
-import { DEFAULTS, MAX_QUEUED, POWER_UPS, POWER_UP_TYPES } from './config.js';
+import { DEFAULTS, MAX_QUEUED, MODE_PRESETS, POWER_UPS, POWER_UP_TYPES } from './config.js';
+import { generateLevel } from './dungeon.js';
 
 export function cellsEqual(a, b) {
   return a.x === b.x && a.y === b.y;
@@ -21,6 +22,11 @@ export function freeCells(state, extras = []) {
   for (const cell of extras) {
     if (cell) occupied.add(cell.y * cols + cell.x);
   }
+  // Adventure's rock counts as occupied, so nothing — food, a collectible, a
+  // dragged crumb — is ever placed inside a wall.
+  for (const index of state.blocked) occupied.add(index);
+  for (const shard of state.shards) occupied.add(shard.y * cols + shard.x);
+  if (state.portal) occupied.add(state.portal.y * cols + state.portal.x);
 
   const free = [];
   for (let i = 0; i < cols * rows; i += 1) {
@@ -29,9 +35,36 @@ export function freeCells(state, extras = []) {
   return free;
 }
 
+/** True when the tile is dungeon rock. Always false outside Adventure. */
+export function isWall(state, x, y) {
+  return state.blocked.has(y * state.config.cols + x);
+}
+
 function pick(free, rng) {
   if (free.length === 0) return null;
   return free[Math.min(free.length - 1, Math.floor(rng() * free.length))];
+}
+
+/**
+ * Narrows candidate cells to the part of the world the player can actually see.
+ *
+ * On a single-screen board this changes nothing. On Adventure's scrolling world
+ * it is the difference between a collectible being an opportunity and it being
+ * a rumour: an eight second lifetime spent two screens away is invisible. Falls
+ * back to the full list when the window has nothing free in it.
+ */
+function onScreen(state, cells) {
+  const { viewCols, viewRows } = state.config;
+  if (!viewCols || !viewRows) return cells;
+
+  const head = state.snake[0];
+  // Half a window minus a tile, so nothing spawns hugging the very edge of view.
+  const reachX = viewCols / 2 - 1;
+  const reachY = viewRows / 2 - 1;
+  const visible = cells.filter(
+    (cell) => Math.abs(cell.x - head.x) <= reachX && Math.abs(cell.y - head.y) <= reachY,
+  );
+  return visible.length > 0 ? visible : cells;
 }
 
 /**
@@ -62,7 +95,7 @@ export function spawnBonusFood(state, rng = Math.random) {
   // Bonus food bows out when the board is tight rather than crowding the last
   // squares the player needs to manoeuvre in.
   if (free.length <= state.config.feastMultiplier) return null;
-  return pick(free, rng);
+  return pick(onScreen(state, free), rng);
 }
 
 /** Tops the board back up to `feastMultiplier` items while Feast is running. */
@@ -77,7 +110,8 @@ function refillBonusFood(state, rng) {
 
 /** A collectible in a free square, away from the food. Null if there is no room. */
 export function spawnPowerUp(state, rng = Math.random) {
-  const cell = pick(freeCells(state, [state.food, ...state.bonusFood]), rng);
+  const free = freeCells(state, [state.food, ...state.bonusFood]);
+  const cell = pick(onScreen(state, free), rng);
   if (!cell) return null;
 
   const type = POWER_UP_TYPES[
@@ -107,7 +141,12 @@ export function effectiveInterval(state) {
 }
 
 export function createGame(overrides = {}, rng = Math.random) {
-  const config = { ...DEFAULTS, ...overrides };
+  // The mode's preset sits between the defaults and the caller's overrides: a
+  // mode brings its own board (Adventure's scrolling world, for one), but an
+  // explicit override still wins, which is what lets the tests play Adventure
+  // on a hand-built floor.
+  const mode = overrides.mode ?? DEFAULTS.mode;
+  const config = { ...DEFAULTS, ...MODE_PRESETS[mode], ...overrides };
   const cx = Math.floor(config.cols / 2);
   const cy = Math.floor(config.rows / 2);
 
@@ -124,7 +163,6 @@ export function createGame(overrides = {}, rng = Math.random) {
     // Extra food items, present only while Feast is running. They vanish with it.
     bonusFood: [],
     powerUp: null,
-    // Ticks remaining per effect. Absent from the board state means inactive.
     // Milliseconds remaining per effect, counted down by `advanceClock`.
     effects: { slow: 0, ghost: 0, magnet: 0, feast: 0 },
     // Magnet moves the food on every other *move*, so its cadence is the one
@@ -136,11 +174,58 @@ export function createGame(overrides = {}, rng = Math.random) {
     score: 0,
     timeLeft: config.mode === 'time' ? config.timeLimit : null,
     tickInterval: config.baseInterval,
+
+    // Adventure. The other modes play on an empty board, so they keep these
+    // empty rather than branching on the mode everywhere downstream.
+    blocked: new Set(),
+    shards: [],
+    shardsTaken: 0, // this floor only, so the HUD can show "2/5"
+    portal: null,
+    portalOpen: false,
+    depth: config.mode === 'adventure' ? 1 : null,
+    // Segments still owed to the snake. A shard is worth several, which they
+    // are paid out over the following moves rather than all at once.
+    growth: 0,
+
     config,
   };
 
-  state.food = spawnFood(state, rng);
+  if (config.mode === 'adventure') {
+    enterLevel(state, generateLevel(config, 1, rng));
+  } else {
+    state.food = spawnFood(state, rng);
+  }
   return state;
+}
+
+/** Moves the snake onto a freshly generated floor. */
+function enterLevel(state, level) {
+  state.blocked = level.blocked;
+  state.snake = level.snake;
+  state.direction = level.direction;
+  state.pending = [];
+  state.shards = level.shards;
+  state.shardsTaken = 0;
+  state.portal = level.portal;
+  state.portalOpen = level.shards.length === 0;
+  state.growth = 0;
+
+  // The floor's furniture belongs to the floor. Running effects deliberately do
+  // not: diving with a Ghost still burning is the reward for a fast clear.
+  state.food = null;
+  state.bonusFood = [];
+  state.powerUp = null;
+  state.powerUpCooldown = state.config.powerUpCooldown;
+}
+
+/**
+ * The snake's pace. Classic and Time attack accelerate with the score; a floor
+ * pays out in lumps, so Adventure accelerates with the depth instead.
+ */
+function updateSpeed(state) {
+  const { minInterval, baseInterval, speedStep, depthStep } = state.config;
+  const steps = state.depth === null ? state.score * speedStep : (state.depth - 1) * depthStep;
+  state.tickInterval = Math.max(minInterval, baseInterval - steps);
 }
 
 /**
@@ -204,6 +289,7 @@ function pulled(state, food, taken) {
 
   for (const cell of candidates) {
     if (cellsEqual(cell, food)) continue; // already aligned on that axis
+    if (isWall(state, cell.x, cell.y)) continue; // Magnet does not pull through rock
     if (state.snake.some((seg) => cellsEqual(seg, cell))) continue;
     if (state.powerUp && cellsEqual(cell, state.powerUp)) continue;
     if (taken.some((other) => cellsEqual(other, cell))) continue;
@@ -212,18 +298,28 @@ function pulled(state, food, taken) {
   return food;
 }
 
-/** Magnet applies to every food item on the board, Feast's extras included. */
+/**
+ * Magnet applies to everything collectable: the ordinary food, Feast's crumbs,
+ * and Adventure's shards. Dragging shards is deliberately weak rather than
+ * absent — rock blocks the pull, so it gathers a room up but will not haul the
+ * floor's objective through the corridors to you.
+ */
 function pullFood(state) {
-  const hasMain = state.food !== null;
-  const items = hasMain ? [state.food, ...state.bonusFood] : state.bonusFood.slice();
+  const items = [];
+  if (state.food) items.push(state.food);
+  const crumbsAt = items.length;
+  items.push(...state.bonusFood);
+  const shardsAt = items.length;
+  items.push(...state.shards);
 
   for (let i = 0; i < items.length; i += 1) {
-    // Every other item blocks this one, so two crumbs never stack up.
+    // Every other item blocks this one, so two of them never stack up.
     items[i] = pulled(state, items[i], items.filter((_, j) => j !== i));
   }
 
-  if (hasMain) state.food = items.shift();
-  state.bonusFood = items;
+  if (state.food) [state.food] = items;
+  state.bonusFood = items.slice(crumbsAt, shardsAt);
+  state.shards = items.slice(shardsAt);
 }
 
 function collectPowerUp(state, head, rng) {
@@ -296,6 +392,18 @@ export function advanceClock(state, dt, rng = Math.random) {
   return state;
 }
 
+/**
+ * Clearing a floor: the portal takes the snake down to a freshly generated one.
+ * Length does not carry over — the snake squeezes through — but the pace does,
+ * and the next floor is bigger and holds more shards.
+ */
+function descend(state, rng) {
+  state.depth += 1;
+  state.score += state.config.depthBonus;
+  enterLevel(state, generateLevel(state.config, state.depth, rng));
+  updateSpeed(state);
+}
+
 /** Advances the game by exactly one move. Mutates and returns `state`. */
 export function tick(state, rng = Math.random) {
   if (state.status !== 'running') return state;
@@ -317,15 +425,27 @@ export function tick(state, rng = Math.random) {
     return state;
   }
 
+  // Rock is rock. Ghost makes the snake insubstantial to *itself*, not to the
+  // dungeon — a wall-phasing snake would make every floor's layout irrelevant.
+  if (isWall(state, x, y)) {
+    state.status = 'over';
+    return state;
+  }
+
   const head = { x, y };
   const onFood = state.food !== null && cellsEqual(head, state.food);
   const onBonus = state.bonusFood.some((food) => cellsEqual(food, head));
-  const eating = onFood || onBonus;
+  const onShard = state.shards.some((shard) => cellsEqual(shard, head));
+
+  let owed = state.growth;
+  if (onFood) owed += 1;
+  if (onBonus) owed += 1;
+  if (onShard) owed += state.config.shardGrowth;
 
   // Unless the snake is growing, the tail vacates its square on this same tick,
   // so moving into it is legal and must not count as a self-collision.
   if (!isEffectActive(state, 'ghost')) {
-    const bodyLength = eating ? state.snake.length : state.snake.length - 1;
+    const bodyLength = owed > 0 ? state.snake.length : state.snake.length - 1;
     for (let i = 0; i < bodyLength; i += 1) {
       if (cellsEqual(state.snake[i], head)) {
         state.status = 'over';
@@ -336,14 +456,17 @@ export function tick(state, rng = Math.random) {
 
   state.snake.unshift(head);
 
-  if (eating) {
+  if (owed > 0) {
+    state.growth = owed - 1;
+  } else {
+    state.snake.pop();
+  }
+
+  if (onFood || onBonus) {
     // Feast's crumbs are worth the same as the ordinary food, and speed the
     // snake up the same way — the power-up trades difficulty for score.
     state.score += 1;
-    state.tickInterval = Math.max(
-      state.config.minInterval,
-      state.config.baseInterval - state.score * state.config.speedStep,
-    );
+    updateSpeed(state);
 
     if (onBonus) {
       state.bonusFood = state.bonusFood.filter((food) => !cellsEqual(food, head));
@@ -357,10 +480,21 @@ export function tick(state, rng = Math.random) {
       }
     }
 
-    // Keep the board at 4x for as long as the effect has left to run.
+    // Keep the board at its multiplier for as long as the effect has to run.
     if (isEffectActive(state, 'feast')) refillBonusFood(state, rng);
-  } else {
-    state.snake.pop();
+  }
+
+  if (onShard) {
+    state.shards = state.shards.filter((shard) => !cellsEqual(shard, head));
+    state.shardsTaken += 1;
+    state.score += 1;
+    // The last shard is what unlocks the way down.
+    if (state.shards.length === 0) state.portalOpen = true;
+  }
+
+  if (state.portalOpen && state.portal && cellsEqual(head, state.portal)) {
+    descend(state, rng);
+    return state;
   }
 
   collectPowerUp(state, head, rng);

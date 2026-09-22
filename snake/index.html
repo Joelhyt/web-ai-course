@@ -19,6 +19,14 @@
             <dt>Best</dt>
             <dd id="high-score">0</dd>
           </div>
+          <div class="stat" id="depth-stat" hidden>
+            <dt>Depth</dt>
+            <dd id="depth">1</dd>
+          </div>
+          <div class="stat" id="shards-stat" hidden>
+            <dt>Shards</dt>
+            <dd id="shards">0/3</dd>
+          </div>
           <div class="stat" id="time-stat" hidden>
             <dt>Time</dt>
             <dd id="time">60s</dd>
@@ -40,15 +48,23 @@
           <select id="mode">
             <option value="classic">Classic — play until you crash</option>
             <option value="time">Time attack — 60 seconds, best score wins</option>
+            <option value="adventure">Adventure — dive as deep as you can</option>
           </select>
         </label>
-        <label for="walls">
+        <label for="walls" id="walls-label">
           Walls
           <select id="walls">
             <option value="solid">Solid — crashing ends the round</option>
             <option value="wrap">Wrap — pass through to the far side</option>
           </select>
         </label>
+        <p class="hint" id="adventure-hint" hidden>
+          Every floor is generated fresh and is far larger than the window: the
+          view scrolls with you, the corner map shows the whole floor, and
+          chevrons at the edge point to whatever is off screen. Take all the
+          shards to unlock the portal, then slip through to descend. The walls
+          are solid — Ghost will not carry you through rock.
+        </p>
         <ul class="legend">
           <li>
             <svg viewBox="0 0 24 24" aria-hidden="true" class="icon slow">

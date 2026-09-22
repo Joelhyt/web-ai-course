@@ -564,3 +564,211 @@ test('the clock is paused with the game', () => {
 
   assert.equal(state.timeLeft, 60_000);
 });
+
+// --- Adventure --------------------------------------------------------------
+
+// A hand-built floor, so the rules can be tested without depending on whatever
+// the generator happens to produce: a 7x5 room with a rock pillar at 3,2.
+function dungeon(overrides = {}) {
+  const state = createGame({
+    cols: 7, rows: 5, mode: 'adventure', powerUpChance: 0, ...overrides,
+  }, firstCell);
+
+  const blocked = new Set();
+  for (let y = 0; y < 5; y += 1) {
+    for (let x = 0; x < 7; x += 1) {
+      const edge = x === 0 || y === 0 || x === 6 || y === 4;
+      if (edge || (x === 3 && y === 2)) blocked.add(y * 7 + x);
+    }
+  }
+
+  state.blocked = blocked;
+  state.snake = [{ x: 2, y: 1 }, { x: 1, y: 1 }];
+  state.direction = { x: 1, y: 0 };
+  state.shards = [{ x: 5, y: 1 }];
+  state.shardsTaken = 0;
+  state.portal = { x: 1, y: 3 };
+  state.portalOpen = false;
+  state.growth = 0;
+  state.status = 'running';
+  return state;
+}
+
+test('adventure starts on a generated floor with no loose food', () => {
+  const state = createGame({ mode: 'adventure' });
+
+  assert.equal(state.depth, 1);
+  assert.equal(state.food, null, 'shards replace the food entirely');
+  assert.ok(state.shards.length >= 3);
+  assert.ok(state.blocked.size > 0);
+  assert.equal(state.portalOpen, false);
+});
+
+test('running into rock ends the run', () => {
+  const state = dungeon();
+  state.snake = [{ x: 2, y: 2 }, { x: 1, y: 2 }];
+  state.direction = { x: 1, y: 0 }; // straight into the pillar at 3,2
+
+  tick(state, firstCell);
+
+  assert.equal(state.status, 'over');
+});
+
+test('ghost does not carry the snake through rock', () => {
+  const state = dungeon();
+  state.snake = [{ x: 2, y: 2 }, { x: 1, y: 2 }];
+  state.direction = { x: 1, y: 0 };
+  state.effects.ghost = 5000;
+
+  tick(state, firstCell);
+
+  assert.equal(state.status, 'over', 'the dungeon has to stay solid');
+});
+
+test('a shard scores, grows the snake and unlocks the portal', () => {
+  const state = dungeon();
+  state.snake = [{ x: 4, y: 1 }, { x: 3, y: 1 }];
+  const length = state.snake.length;
+
+  tick(state, firstCell); // onto the shard at 5,1
+
+  assert.equal(state.score, 1);
+  assert.equal(state.shardsTaken, 1);
+  assert.equal(state.shards.length, 0);
+  assert.equal(state.portalOpen, true);
+
+  // Growth is paid out over the moves that follow rather than all at once.
+  assert.equal(state.snake.length, length + 1);
+  state.pending = [{ x: 0, y: 1 }];
+  tick(state, firstCell);
+  assert.equal(state.snake.length, length + state.config.shardGrowth);
+});
+
+test('the portal stays shut until the last shard is taken', () => {
+  const state = dungeon();
+  state.snake = [{ x: 2, y: 3 }, { x: 2, y: 2 }];
+  state.direction = { x: -1, y: 0 };
+  const depth = state.depth;
+
+  tick(state, firstCell); // onto the locked portal at 1,3
+
+  assert.equal(state.status, 'running');
+  assert.equal(state.depth, depth, 'a locked portal is just floor');
+  assert.deepEqual(state.snake[0], { x: 1, y: 3 });
+});
+
+test('an open portal descends to a fresh floor', () => {
+  const state = dungeon();
+  state.snake = [{ x: 2, y: 3 }, { x: 2, y: 2 }];
+  state.direction = { x: -1, y: 0 };
+  state.shards = [];
+  state.portalOpen = true;
+  state.score = 4;
+
+  tick(state, firstCell);
+
+  assert.equal(state.depth, 2);
+  assert.equal(state.score, 4 + state.config.depthBonus);
+  assert.equal(state.status, 'running');
+  assert.ok(state.shards.length >= 3, 'the new floor has its own shards');
+  assert.equal(state.portalOpen, false, 'and its own locked portal');
+  assert.equal(state.shardsTaken, 0);
+  // The snake squeezes through: the next floor starts it fresh.
+  assert.equal(state.snake.length, 3);
+});
+
+test('effects survive the descent but the floor furniture does not', () => {
+  const state = dungeon();
+  state.snake = [{ x: 2, y: 3 }, { x: 2, y: 2 }];
+  state.direction = { x: -1, y: 0 };
+  state.shards = [];
+  state.portalOpen = true;
+  state.effects.ghost = 4000;
+  state.powerUp = { type: 'slow', x: 5, y: 3, msLeft: 5000 };
+  state.bonusFood = [{ x: 4, y: 3 }];
+
+  tick(state, firstCell);
+
+  assert.equal(state.effects.ghost, 4000, 'diving mid-Ghost keeps the Ghost');
+  assert.equal(state.powerUp, null);
+  assert.deepEqual(state.bonusFood, []);
+});
+
+test('adventure speed follows the depth, not the score', () => {
+  const state = dungeon();
+  const opening = state.tickInterval;
+
+  state.score = 50;
+  state.shards = [];
+  state.portalOpen = true;
+  state.snake = [{ x: 2, y: 3 }, { x: 2, y: 2 }];
+  state.direction = { x: -1, y: 0 };
+  tick(state, firstCell);
+
+  assert.equal(state.tickInterval, opening - state.config.depthStep);
+});
+
+test('nothing spawns inside rock', () => {
+  const state = dungeon({ powerUpChance: 1000, powerUpCooldown: 0 });
+
+  for (let i = 0; i < 40; i += 1) {
+    advanceClock(state, 100, Math.random);
+    if (state.powerUp) {
+      assert.ok(
+        !state.blocked.has(state.powerUp.y * 7 + state.powerUp.x),
+        'a collectible turned up inside a wall',
+      );
+      state.powerUp = null;
+      state.powerUpCooldown = 0;
+    }
+  }
+});
+
+test('magnet cannot drag a shard through rock', () => {
+  const state = dungeon();
+  // Head and shard on opposite sides of the pillar at 3,2, aligned on the row.
+  state.snake = [{ x: 2, y: 2 }, { x: 1, y: 2 }];
+  state.direction = { x: 0, y: -1 };
+  state.shards = [{ x: 5, y: 2 }];
+  state.effects.magnet = 5000;
+
+  tick(state, firstCell);
+
+  assert.deepEqual(state.shards[0], { x: 4, y: 2 }, 'it closes to the pillar');
+
+  state.direction = { x: 0, y: 1 };
+  state.snake = [{ x: 2, y: 2 }, { x: 1, y: 2 }];
+  state.magnetPhase = 0;
+  tick(state, firstCell);
+
+  assert.deepEqual(state.shards[0], { x: 4, y: 2 }, 'and then stops at it');
+});
+
+test('collectibles spawn within sight of the snake on a scrolling world', () => {
+  const state = createGame({ mode: 'adventure' });
+  state.status = 'running';
+  const { viewCols, viewRows } = state.config;
+
+  for (let i = 0; i < 60; i += 1) {
+    const spot = spawnPowerUp(state, Math.random);
+    assert.ok(spot, 'expected somewhere to put it');
+    const head = state.snake[0];
+    assert.ok(
+      Math.abs(spot.x - head.x) <= viewCols / 2 && Math.abs(spot.y - head.y) <= viewRows / 2,
+      `spawned off screen at ${spot.x},${spot.y} with the head at ${head.x},${head.y}`,
+    );
+  }
+});
+
+test('a single-screen board is unaffected by the on-screen rule', () => {
+  const state = runningGame();
+  const seen = new Set();
+
+  for (let i = 0; i < 400; i += 1) {
+    const spot = spawnPowerUp(state, Math.random);
+    seen.add(`${spot.x},${spot.y}`);
+  }
+
+  // Far more distinct cells than a window around the head could account for.
+  assert.ok(seen.size > 60, `only ${seen.size} distinct spawn cells`);
+});

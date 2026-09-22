@@ -5,13 +5,25 @@ export const DEFAULTS = Object.freeze({
   rows: 20,
   cell: 24, // CSS pixels per grid square
 
+  // How much of the grid the canvas shows. Null means "all of it" — only
+  // Adventure plays on a world bigger than its window, scrolled by the camera.
+  viewCols: null,
+  viewRows: null,
+
   baseInterval: 120, // ms between moves at score 0
   minInterval: 60, // fastest the game is allowed to get
   speedStep: 1, // ms shaved off the interval per food eaten
 
   walls: 'solid', // 'solid' ends the round on contact, 'wrap' teleports to the far side
-  mode: 'classic', // 'classic' plays until you crash, 'time' is a 60 second sprint
+  mode: 'classic', // see MODE_PRESETS below
   timeLimit: 60_000, // ms on the clock in time attack
+
+  // Adventure. The snake's speed comes from the depth rather than the score,
+  // because a floor hands out points in lumps and a score-driven snake would
+  // lurch faster every time you picked a shard up.
+  shardGrowth: 2, // segments gained per shard
+  depthBonus: 10, // points for clearing a floor
+  depthStep: 4, // ms shaved off the interval per floor descended
 
   // Power-ups. Every duration is in milliseconds and is spent against the wall
   // clock, not against ticks: a power-up collected by a long, fast snake has to
@@ -21,6 +33,27 @@ export const DEFAULTS = Object.freeze({
   powerUpLifetime: 8000, // ms a collectible stays on the board before fading
   powerUpCooldown: 4000, // ms before another may appear (also the head start)
   feastMultiplier: 6, // food items on the board while Feast is running
+});
+
+/**
+ * What each mode changes about the board. Adventure's 24x24 window at 20px
+ * keeps the canvas exactly as wide as the other two modes' 20x24px.
+ */
+export const MODE_PRESETS = Object.freeze({
+  classic: Object.freeze({}),
+  time: Object.freeze({}),
+  // Adventure's world is far larger than the canvas: the camera follows the
+  // snake and scrolls the dungeon behind it, which is what lets a floor be a
+  // place to explore rather than a single screen to survive.
+  adventure: Object.freeze({
+    cols: 60,
+    rows: 45,
+    viewCols: 24,
+    viewRows: 24,
+    cell: 20,
+    walls: 'solid',
+    baseInterval: 135,
+  }),
 });
 
 // At most two inputs are buffered. Any more and turns start feeling delayed
@@ -69,6 +102,17 @@ export const COLORS = Object.freeze({
   food: '#f87171',
   bonusFood: '#f472b6', // the extra, temporary food Feast puts out
   overlay: 'rgba(16, 21, 28, 0.82)',
+
+  // Adventure
+  rock: '#090d13', // dungeon wall fill: darker than the board, so rooms read as carved out
+  rockEdge: '#31445c', // the lit face a wall shows to the room above it
+  rockDeep: '#05080c', // the darker tiles in the rubble texture
+  floor: '#18212e', // open dungeon floor
+  floorAlt: '#1b2533', // its flagstone variation
+  floorGrid: '#222e3e',
+  shard: '#67e8f9',
+  portalLocked: '#7c8ba1',
+  portalOpen: '#34d399',
   title: '#f8fafc',
   subtitle: '#94a3b8',
 });
