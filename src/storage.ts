@@ -1,4 +1,4 @@
-import type { WallMode } from "./game/types";
+import type { GameMode, WallMode } from "./game/types";
 
 export const BEST_SCORE_STORAGE_KEY_PREFIX = "snake.bestScore";
 
@@ -13,8 +13,8 @@ interface StorageLike {
 }
 
 export interface ScoreStorage {
-  loadBestScore(mode: WallMode): number;
-  saveBestScore(mode: WallMode, score: number): void;
+  loadBestScore(gameMode: GameMode, wallMode: WallMode): number;
+  saveBestScore(gameMode: GameMode, wallMode: WallMode, score: number): void;
 }
 
 export function parseBestScore(rawValue: string | null): number {
@@ -37,19 +37,31 @@ export function createBrowserScoreStorage(
     console.warn(`Best-score storage ${operation} failed.`, error);
   }
 ): ScoreStorage {
-  function buildModeKey(mode: WallMode): string {
-    return `${keyPrefix}.${mode}`;
+  function buildModeKey(gameMode: GameMode, wallMode: WallMode): string {
+    return `${keyPrefix}.${gameMode}.${wallMode}`;
   }
 
-  function readRawBestScore(storage: StorageLike, mode: WallMode): string | null {
-    const modeKey = buildModeKey(mode);
+  function readRawBestScore(
+    storage: StorageLike,
+    gameMode: GameMode,
+    wallMode: WallMode
+  ): string | null {
+    const modeKey = buildModeKey(gameMode, wallMode);
     const modeValue = storage.getItem(modeKey);
     if (modeValue !== null) {
       return modeValue;
     }
 
-    if (mode === "solid") {
-      return storage.getItem(keyPrefix);
+    if (gameMode === "classic") {
+      const legacyModeKey = `${keyPrefix}.${wallMode}`;
+      const legacyModeValue = storage.getItem(legacyModeKey);
+      if (legacyModeValue !== null) {
+        return legacyModeValue;
+      }
+
+      if (wallMode === "solid") {
+        return storage.getItem(keyPrefix);
+      }
     }
 
     return null;
@@ -65,20 +77,20 @@ export function createBrowserScoreStorage(
   }
 
   return {
-    loadBestScore(mode): number {
+    loadBestScore(gameMode, wallMode): number {
       const storage = readStorage();
       if (!storage) {
         return 0;
       }
 
       try {
-        return parseBestScore(readRawBestScore(storage, mode));
+        return parseBestScore(readRawBestScore(storage, gameMode, wallMode));
       } catch (error) {
         reportError("read", error);
         return 0;
       }
     },
-    saveBestScore(mode, score): void {
+    saveBestScore(gameMode, wallMode, score): void {
       if (!Number.isFinite(score) || score < 0) {
         return;
       }
@@ -89,7 +101,10 @@ export function createBrowserScoreStorage(
       }
 
       try {
-        storage.setItem(buildModeKey(mode), String(Math.floor(score)));
+        storage.setItem(
+          buildModeKey(gameMode, wallMode),
+          String(Math.floor(score))
+        );
       } catch (error) {
         reportError("write", error);
       }

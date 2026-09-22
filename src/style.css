@@ -44,6 +44,11 @@ h1 {
   margin: 0;
 }
 
+.secondary-hud {
+  font-size: 0.95rem;
+  gap: 1rem;
+}
+
 .mode-control {
   display: inline-flex;
   align-items: center;

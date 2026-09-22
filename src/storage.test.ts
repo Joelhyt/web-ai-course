@@ -36,12 +36,15 @@ describe("best-score storage", () => {
       () => {}
     );
 
-    expect(adapter.loadBestScore("solid")).toBe(0);
-    expect(adapter.loadBestScore("wrap")).toBe(0);
-    adapter.saveBestScore("solid", 7);
-    adapter.saveBestScore("wrap", 11);
-    expect(adapter.loadBestScore("solid")).toBe(7);
-    expect(adapter.loadBestScore("wrap")).toBe(11);
+    expect(adapter.loadBestScore("classic", "solid")).toBe(0);
+    expect(adapter.loadBestScore("classic", "wrap")).toBe(0);
+    expect(adapter.loadBestScore("time-attack", "solid")).toBe(0);
+    adapter.saveBestScore("classic", "solid", 7);
+    adapter.saveBestScore("classic", "wrap", 11);
+    adapter.saveBestScore("time-attack", "solid", 5);
+    expect(adapter.loadBestScore("classic", "solid")).toBe(7);
+    expect(adapter.loadBestScore("classic", "wrap")).toBe(11);
+    expect(adapter.loadBestScore("time-attack", "solid")).toBe(5);
   });
 
   it("falls back to legacy solid-mode key when mode key is missing", () => {
@@ -54,8 +57,8 @@ describe("best-score storage", () => {
       () => {}
     );
 
-    expect(adapter.loadBestScore("solid")).toBe(13);
-    expect(adapter.loadBestScore("wrap")).toBe(0);
+    expect(adapter.loadBestScore("classic", "solid")).toBe(13);
+    expect(adapter.loadBestScore("classic", "wrap")).toBe(0);
   });
 
   it("reports read and write errors without throwing", () => {
@@ -77,8 +80,8 @@ describe("best-score storage", () => {
       }
     );
 
-    expect(adapter.loadBestScore("solid")).toBe(0);
-    adapter.saveBestScore("solid", 5);
+    expect(adapter.loadBestScore("classic", "solid")).toBe(0);
+    adapter.saveBestScore("classic", "solid", 5);
     expect(errors).toEqual(["read", "write"]);
   });
 });

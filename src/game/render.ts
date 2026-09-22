@@ -6,8 +6,17 @@ export interface GameRenderer {
 
 const GRID_COLOR = "#ececec";
 const SNAKE_COLOR = "#1f1f1f";
+const GHOST_OUTLINE_COLOR = "#8b5cf6";
+const GHOST_OUTLINE_WIDTH = 2;
 const FOOD_COLOR = "#1f7a1f";
+const FEAST_FOOD_COLOR = "#d9a400";
 const BACKGROUND_COLOR = "#ffffff";
+const POWER_UP_STYLES = {
+  slow: { color: "#1f4db3", label: "S" },
+  ghost: { color: "#7a2eb3", label: "G" },
+  magnet: { color: "#b34a1f", label: "M" },
+  feast: { color: "#b37a00", label: "F" }
+} as const;
 
 function drawGrid(
   context: CanvasRenderingContext2D,
@@ -33,6 +42,10 @@ function drawGrid(
     context.lineTo(width * cellSize, py);
     context.stroke();
   }
+}
+
+function hasGhostEffect(state: GameState): boolean {
+  return state.activePowerUps.some((powerUp) => powerUp.type === "ghost");
 }
 
 export function createCanvasRenderer(
@@ -69,6 +82,25 @@ export function createCanvasRenderer(
         cellSize
       );
 
+      context.fillStyle = FEAST_FOOD_COLOR;
+      for (const food of state.extraFoods) {
+        context.fillRect(food.x * cellSize, food.y * cellSize, cellSize, cellSize);
+      }
+
+      for (const boardPowerUp of state.boardPowerUps) {
+        const style = POWER_UP_STYLES[boardPowerUp.type];
+        const x = boardPowerUp.position.x * cellSize;
+        const y = boardPowerUp.position.y * cellSize;
+
+        context.fillStyle = style.color;
+        context.fillRect(x, y, cellSize, cellSize);
+        context.fillStyle = "#ffffff";
+        context.font = `${Math.floor(cellSize * 0.65)}px Arial`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(style.label, x + cellSize / 2, y + cellSize / 2 + 0.5);
+      }
+
       context.fillStyle = SNAKE_COLOR;
       for (const segment of state.snake) {
         context.fillRect(
@@ -77,6 +109,21 @@ export function createCanvasRenderer(
           cellSize,
           cellSize
         );
+      }
+
+      if (hasGhostEffect(state)) {
+        const inset = 1;
+        const outlineSize = Math.max(1, cellSize - inset * 2);
+        context.strokeStyle = GHOST_OUTLINE_COLOR;
+        context.lineWidth = GHOST_OUTLINE_WIDTH;
+        for (const segment of state.snake) {
+          context.strokeRect(
+            segment.x * cellSize + inset,
+            segment.y * cellSize + inset,
+            outlineSize,
+            outlineSize
+          );
+        }
       }
 
       if (state.status === "game-over") {

@@ -11,6 +11,14 @@
       <section class="hud" aria-label="Scoreboard">
         <p>Score: <span id="score">0</span></p>
         <p>Best: <span id="best-score">0</span></p>
+        <p>Time left: <span id="time-remaining">—</span>s</p>
+        <label class="mode-control" for="game-mode">
+          Mode:
+          <select id="game-mode">
+            <option value="classic">Classic</option>
+            <option value="time-attack">Time Attack</option>
+          </select>
+        </label>
         <label class="mode-control" for="wall-mode">
           Walls:
           <select id="wall-mode">
@@ -19,11 +27,19 @@
           </select>
         </label>
       </section>
+      <section class="hud secondary-hud" aria-label="Power-up status">
+        <p>Active power-up: <span id="active-power-up">None</span></p>
+        <p>Board power-up: <span id="board-power-up">None</span></p>
+      </section>
       <p id="game-status" class="status" aria-live="polite"></p>
       <canvas id="game-canvas" role="img" aria-label="Snake game board"></canvas>
       <p class="instructions">
         Controls: Arrow keys or WASD to move. Press R to restart after game
-        over. The wall mode can be changed between rounds.
+        over. Game mode and wall mode can be changed between rounds. Power-up legend:
+        <strong>S</strong> Slow, <strong>G</strong> Ghost, <strong>M</strong>
+        Magnet, <strong>F</strong> Feast (spawns temporary gold foods). Ghost adds
+        a purple snake outline while active. Time Attack:
+        60 seconds, stacked power-ups, faster uncapped speed.
       </p>
       <button id="restart-button" type="button" hidden disabled>Restart</button>
     </main>
