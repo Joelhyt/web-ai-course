@@ -1,10 +1,11 @@
 // Wires the pure game rules to the canvas, the keyboard and the HUD,
 // and owns the animation loop.
 
-import { createGame, tick, queueDirection } from './game.js';
+import { createGame, tick, queueDirection, effectiveInterval, effectTicks } from './game.js';
 import { render, resizeCanvas } from './renderer.js';
 import { attachKeyboard } from './input.js';
 import { loadHighScore, saveHighScore } from './storage.js';
+import { POWER_UPS, POWER_UP_TYPES } from './config.js';
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -13,6 +14,7 @@ const scoreEl = document.getElementById('score');
 const highScoreEl = document.getElementById('high-score');
 const statusEl = document.getElementById('status');
 const wallsEl = document.getElementById('walls');
+const effectsEl = document.getElementById('effects');
 
 let highScore = loadHighScore();
 let state = createGame({ walls: wallsEl.value });
@@ -64,10 +66,48 @@ const STATUS_LABEL = {
   won: 'Cleared!',
 };
 
+// One chip per power-up, built once and then only shown, hidden and refilled.
+// Rebuilding the list every frame would thrash the DOM 60 times a second.
+const chips = new Map(POWER_UP_TYPES.map((type) => {
+  const meta = POWER_UPS[type];
+
+  const chip = document.createElement('li');
+  chip.className = 'effect';
+  chip.hidden = true;
+  chip.style.setProperty('--effect-color', meta.color);
+
+  const label = document.createElement('span');
+  label.className = 'effect-label';
+  label.textContent = meta.label;
+
+  const track = document.createElement('span');
+  track.className = 'effect-track';
+  const bar = document.createElement('span');
+  bar.className = 'effect-bar';
+  track.append(bar);
+
+  chip.append(label, track);
+  effectsEl.append(chip);
+
+  return [type, { chip, bar }];
+}));
+
+function updateEffects() {
+  for (const type of POWER_UP_TYPES) {
+    const ticks = effectTicks(state, type);
+    const { chip, bar } = chips.get(type);
+    chip.hidden = ticks <= 0;
+    if (ticks > 0) {
+      bar.style.width = `${(ticks / POWER_UPS[type].duration) * 100}%`;
+    }
+  }
+}
+
 function updateHud() {
   scoreEl.textContent = String(state.score);
   highScoreEl.textContent = String(highScore);
   statusEl.textContent = STATUS_LABEL[state.status];
+  updateEffects();
 }
 
 function frame(now) {
@@ -79,10 +119,13 @@ function frame(now) {
   if (state.status === 'running') {
     accumulator += delta;
     // A fixed timestep keeps the snake moving at the same speed regardless of
-    // whether the display refreshes at 60Hz, 120Hz or 144Hz.
-    while (accumulator >= state.tickInterval && state.status === 'running') {
-      accumulator -= state.tickInterval;
+    // whether the display refreshes at 60Hz, 120Hz or 144Hz. The interval is
+    // read inside the loop because Slow can start or end on any of these ticks.
+    let interval = effectiveInterval(state);
+    while (accumulator >= interval && state.status === 'running') {
+      accumulator -= interval;
       tick(state);
+      interval = effectiveInterval(state);
     }
 
     if (state.status !== 'running') {
@@ -97,7 +140,7 @@ function frame(now) {
   }
 
   updateHud();
-  render(ctx, state);
+  render(ctx, state, now);
   requestAnimationFrame(frame);
 }
 

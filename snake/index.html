@@ -28,6 +28,8 @@
 
       <canvas id="board" aria-label="Snake game board"></canvas>
 
+      <ul id="effects" class="effects" aria-live="polite" aria-label="Active power-ups"></ul>
+
       <footer class="controls">
         <label for="walls">
           Walls
@@ -36,6 +38,30 @@
             <option value="wrap">Wrap — pass through to the far side</option>
           </select>
         </label>
+        <ul class="legend">
+          <li>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon slow">
+              <path d="M5 4h14L12.6 12 19 20H5l6.4-8z" />
+            </svg>
+            <b>Slow</b> — the snake crawls for a few seconds
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon ghost">
+              <path d="M12 2a8 8 0 0 0-8 8v12l2.7-2.4L9.3 22l2.7-2.4L14.7 22l2.6-2.4L20 22V10a8 8 0 0 0-8-8z" />
+              <circle cx="9.2" cy="10" r="1.6" fill="#10151c" />
+              <circle cx="14.8" cy="10" r="1.6" fill="#10151c" />
+            </svg>
+            <b>Ghost</b> — pass straight through your own body
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="icon magnet">
+              <path d="M5 20V12a7 7 0 0 1 14 0v8h-4v-8a3 3 0 0 0-6 0v8z" />
+              <rect x="5" y="17" width="4" height="3" fill="#f8fafc" />
+              <rect x="15" y="17" width="4" height="3" fill="#f8fafc" />
+            </svg>
+            <b>Magnet</b> — food is dragged toward your head
+          </li>
+        </ul>
         <p class="keys">
           <kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> or
           <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to steer ·
