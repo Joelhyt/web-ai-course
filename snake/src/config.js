@@ -10,15 +10,17 @@ export const DEFAULTS = Object.freeze({
   speedStep: 1, // ms shaved off the interval per food eaten
 
   walls: 'solid', // 'solid' ends the round on contact, 'wrap' teleports to the far side
+  mode: 'classic', // 'classic' plays until you crash, 'time' is a 60 second sprint
+  timeLimit: 60_000, // ms on the clock in time attack
 
-  // Power-ups. Every duration and lifetime is counted in ticks rather than
-  // milliseconds: the rules never read a clock, and a slowed snake still gets
-  // the same number of moves out of an effect as a fast one.
+  // Power-ups. Every duration is in milliseconds and is spent against the wall
+  // clock, not against ticks: a power-up collected by a long, fast snake has to
+  // last exactly as long as one collected in the opening seconds of a round.
   slowFactor: 1.9, // tick interval multiplier while Slow is active
-  powerUpChance: 0.03, // per-tick odds of one appearing when the board has none
-  powerUpLifetime: 60, // ticks a collectible stays on the board before fading
-  powerUpCooldown: 40, // ticks before another may appear (also the head start)
-  feastMultiplier: 4, // food items on the board while Feast is running
+  powerUpChance: 0.5, // odds per second of one appearing when the board has none
+  powerUpLifetime: 8000, // ms a collectible stays on the board before fading
+  powerUpCooldown: 4000, // ms before another may appear (also the head start)
+  feastMultiplier: 6, // food items on the board while Feast is running
 });
 
 // At most two inputs are buffered. Any more and turns start feeling delayed
@@ -26,32 +28,32 @@ export const DEFAULTS = Object.freeze({
 export const MAX_QUEUED = 2;
 
 /**
- * The three collectibles. `duration` is in ticks; `color` and `glyph` are what
- * the renderer and the HUD use, so a new power-up only needs an entry here plus
- * its effect in `tick`.
+ * The four collectibles. `duration` is in milliseconds; `color` and `label` are
+ * what the renderer and the HUD use, so a new power-up only needs an entry here
+ * plus its effect in `tick`.
  */
 export const POWER_UPS = Object.freeze({
   slow: Object.freeze({
     label: 'Slow',
-    duration: 55,
+    duration: 6000,
     color: '#38bdf8',
     detail: 'the snake moves at a crawl',
   }),
   ghost: Object.freeze({
     label: 'Ghost',
-    duration: 45,
+    duration: 5000,
     color: '#c084fc',
     detail: 'pass straight through your own body',
   }),
   magnet: Object.freeze({
     label: 'Magnet',
-    duration: 55,
+    duration: 6000,
     color: '#fbbf24',
     detail: 'food is dragged toward the head',
   }),
   feast: Object.freeze({
     label: 'Feast',
-    duration: 50,
+    duration: 6500,
     color: '#f472b6',
     detail: 'four times the food, while it lasts',
   }),

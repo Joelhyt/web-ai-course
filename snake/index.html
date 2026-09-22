@@ -19,6 +19,10 @@
             <dt>Best</dt>
             <dd id="high-score">0</dd>
           </div>
+          <div class="stat" id="time-stat" hidden>
+            <dt>Time</dt>
+            <dd id="time">60s</dd>
+          </div>
           <div class="stat">
             <dt>Status</dt>
             <dd id="status">Ready</dd>
@@ -31,6 +35,13 @@
       <ul id="effects" class="effects" aria-live="polite" aria-label="Active power-ups"></ul>
 
       <footer class="controls">
+        <label for="mode">
+          Mode
+          <select id="mode">
+            <option value="classic">Classic — play until you crash</option>
+            <option value="time">Time attack — 60 seconds, best score wins</option>
+          </select>
+        </label>
         <label for="walls">
           Walls
           <select id="walls">

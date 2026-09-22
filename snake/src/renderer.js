@@ -1,7 +1,7 @@
 // Draws a game state onto a 2D canvas context. Read-only with respect to state.
 
 import { COLORS, POWER_UPS, POWER_UP_TYPES } from './config.js';
-import { isEffectActive, effectTicks } from './game.js';
+import { isEffectActive, effectMs } from './game.js';
 
 /**
  * Sizes the canvas for the display's pixel density. Without this the grid looks
@@ -15,6 +15,11 @@ export function resizeCanvas(canvas, ctx, config) {
 
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
+  // The surrounding column sizes itself from this, so the HUD and the footer
+  // line up with the board instead of the board floating inside a column that
+  // the legend text has stretched wider than it.
+  canvas.style.setProperty('--board-width', `${cssWidth}px`);
+  document.documentElement.style.setProperty('--board-width', `${cssWidth}px`);
   canvas.width = Math.round(cssWidth * dpr);
   canvas.height = Math.round(cssHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -144,7 +149,7 @@ function drawPowerUp(ctx, powerUp, cell, time) {
 
   // A slow pulse says "collectible"; the last couple of seconds blink, which is
   // the only warning the player gets that it is about to vanish.
-  const expiring = powerUp.ticksLeft <= 14;
+  const expiring = powerUp.msLeft <= 2000;
   const pulse = 1 + Math.sin(time / 190) * (expiring ? 0.16 : 0.07);
   const alpha = expiring ? 0.45 + Math.abs(Math.sin(time / 140)) * 0.55 : 1;
 
@@ -153,7 +158,7 @@ function drawPowerUp(ctx, powerUp, cell, time) {
 
   // Halo, so the tile itself reads as charged.
   const halo = ctx.createRadialGradient(cx, cy, cell * 0.1, cx, cy, cell * 0.62);
-  halo.addColorStop(0, `${meta.color}55`);
+  halo.addColorStop(0, `${meta.color}66`);
   halo.addColorStop(1, `${meta.color}00`);
   ctx.fillStyle = halo;
   ctx.beginPath();
@@ -162,7 +167,7 @@ function drawPowerUp(ctx, powerUp, cell, time) {
 
   ctx.fillStyle = meta.color;
   ctx.strokeStyle = meta.color;
-  const r = cell * 0.3 * pulse;
+  const r = cell * 0.34 * pulse;
 
   if (powerUp.type === 'slow') drawSlowGlyph(ctx, cx, cy, r);
   else if (powerUp.type === 'ghost') drawGhostGlyph(ctx, cx, cy, r);
@@ -177,10 +182,10 @@ function drawPowerUp(ctx, powerUp, cell, time) {
  * dashed ring — the broken outline is the tell that it is temporary — and it
  * blinks out in step with the effect's last ticks.
  */
-function drawBonusFood(ctx, food, cell, ticksLeft, time) {
+function drawBonusFood(ctx, food, cell, msLeft, time) {
   const cx = food.x * cell + cell / 2;
   const cy = food.y * cell + cell / 2;
-  const expiring = ticksLeft <= 14;
+  const expiring = msLeft <= 2000;
 
   ctx.save();
   ctx.globalAlpha = expiring ? 0.35 + Math.abs(Math.sin(time / 130)) * 0.65 : 1;
@@ -268,12 +273,12 @@ function drawSnake(ctx, state, cell, time) {
 function drawEffectFrames(ctx, state, width, height) {
   let inset = 1.5;
   for (const type of POWER_UP_TYPES) {
-    const ticks = effectTicks(state, type);
-    if (ticks <= 0) continue;
+    const ms = effectMs(state, type);
+    if (ms <= 0) continue;
 
     ctx.save();
-    // Fade the frame out over the final ticks as an expiry warning.
-    ctx.globalAlpha = Math.min(1, ticks / 12) * 0.75;
+    // Fade the frame out over the last second as an expiry warning.
+    ctx.globalAlpha = Math.min(1, ms / 1000) * 0.75;
     ctx.strokeStyle = POWER_UPS[type].color;
     ctx.lineWidth = 3;
     ctx.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
@@ -282,14 +287,37 @@ function drawEffectFrames(ctx, state, width, height) {
   }
 }
 
+/**
+ * A drain bar across the very top of the board in time attack. The clock also
+ * sits in the HUD, but the player's eyes are on the snake, not on the header.
+ */
+function drawTimeBar(ctx, state, width) {
+  if (state.timeLeft === null) return;
+
+  const fraction = state.timeLeft / state.config.timeLimit;
+  const urgent = state.timeLeft <= 10_000;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(148, 163, 184, 0.22)';
+  ctx.fillRect(0, 0, width, 5);
+  ctx.fillStyle = urgent ? COLORS.food : COLORS.snake;
+  ctx.fillRect(0, 0, width * fraction, 5);
+  ctx.restore();
+}
+
 function overlayText(state) {
+  const timed = state.config.mode === 'time';
   switch (state.status) {
     case 'ready':
-      return ['SNAKE', 'Press Space or an arrow key to start'];
+      return timed
+        ? ['TIME ATTACK', `${Math.round(state.config.timeLimit / 1000)} seconds — press Space or an arrow key`]
+        : ['SNAKE', 'Press Space or an arrow key to start'];
     case 'paused':
       return ['PAUSED', 'Space or P to resume'];
     case 'over':
       return ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
+    case 'timeup':
+      return ["TIME'S UP", `Score ${state.score} — Enter or R to play again`];
     case 'won':
       return ['BOARD CLEARED', `Perfect score ${state.score} — Enter or R to play again`];
     default:
@@ -328,10 +356,11 @@ export function render(ctx, state, time = 0) {
   if (isEffectActive(state, 'magnet')) drawMagnetPull(ctx, state, cell);
   if (state.powerUp) drawPowerUp(ctx, state.powerUp, cell, time);
   for (const crumb of state.bonusFood) {
-    drawBonusFood(ctx, crumb, cell, effectTicks(state, 'feast'), time);
+    drawBonusFood(ctx, crumb, cell, effectMs(state, 'feast'), time);
   }
   if (state.food) drawFood(ctx, state.food, cell);
   drawSnake(ctx, state, cell, time);
   drawEffectFrames(ctx, state, width, height);
+  drawTimeBar(ctx, state, width);
   drawOverlay(ctx, state, width, height);
 }

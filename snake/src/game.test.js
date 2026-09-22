@@ -13,6 +13,7 @@ import {
   spawnPowerUp,
   spawnBonusFood,
   effectiveInterval,
+  advanceClock,
 } from './game.js';
 import { POWER_UPS } from './config.js';
 
@@ -176,9 +177,11 @@ test('filling the board wins the game', () => {
 
 // --- Power-ups --------------------------------------------------------------
 
-// firstCell always returns 0, which would otherwise roll a power-up on every
-// single tick; most tests above only run one or two ticks, and the cooldown a
-// fresh game starts with keeps the board clear for them.
+// Effect timers, collectible lifetimes and the time attack clock are all
+// milliseconds spent by advanceClock, never by tick: how fast the snake is
+// moving must not change how long a power-up lasts. The tests below drive that
+// clock explicitly, which is also why the ones above can tick freely without
+// ever tripping over a spawn.
 test('a fresh round starts with no collectible and a cooldown', () => {
   const state = runningGame();
 
@@ -189,13 +192,13 @@ test('a fresh round starts with no collectible and a cooldown', () => {
 });
 
 test('a collectible appears once the cooldown lapses, and never on the food', () => {
-  const state = runningGame({ powerUpCooldown: 1, powerUpChance: 1 });
+  const state = runningGame({ powerUpCooldown: 100, powerUpChance: 1000 });
   state.food = { x: 0, y: 0 };
 
-  tick(state, firstCell); // burns the last cooldown tick
+  advanceClock(state, 100, firstCell); // burns the last of the cooldown
   assert.equal(state.powerUp, null);
 
-  tick(state, firstCell);
+  advanceClock(state, 100, firstCell);
   assert.ok(state.powerUp);
   assert.ok(!cellsAt(state.powerUp, state.food));
   assert.ok(!state.snake.some((seg) => cellsAt(seg, state.powerUp)));
@@ -204,26 +207,56 @@ test('a collectible appears once the cooldown lapses, and never on the food', ()
 test('a collectible expires on its own and starts the cooldown again', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.powerUp = { type: 'slow', x: 0, y: 0, ticksLeft: 2 };
+  state.powerUp = { type: 'slow', x: 0, y: 0, msLeft: 200 };
 
-  tick(state, firstCell);
-  assert.equal(state.powerUp.ticksLeft, 1);
+  advanceClock(state, 100, firstCell);
+  assert.equal(state.powerUp.msLeft, 100);
 
-  tick(state, firstCell);
+  advanceClock(state, 100, firstCell);
   assert.equal(state.powerUp, null);
   assert.equal(state.powerUpCooldown, state.config.powerUpCooldown);
+});
+
+test('a stopped game does not age', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.food = { x: 9, y: 9 };
+  state.powerUp = { type: 'slow', x: 0, y: 0, msLeft: 5000 };
+  state.effects.ghost = 5000;
+  state.status = 'paused';
+
+  advanceClock(state, 2000, firstCell);
+
+  assert.equal(state.powerUp.msLeft, 5000, 'the collectible waits out the pause');
+  assert.equal(state.effects.ghost, 5000, 'and so does the effect');
 });
 
 test('driving over a collectible activates its effect', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.powerUp = { type: 'ghost', x: 6, y: 5, ticksLeft: 20 };
+  state.powerUp = { type: 'ghost', x: 6, y: 5, msLeft: 5000 };
 
   tick(state, firstCell);
 
   assert.equal(state.powerUp, null);
-  // Collected at full duration, then one tick of it is spent straight away.
-  assert.equal(state.effects.ghost, POWER_UPS.ghost.duration - 1);
+  assert.equal(state.effects.ghost, POWER_UPS.ghost.duration);
+});
+
+test('an effect lasts the same wall time however fast the snake is', () => {
+  // Wrapping walls so the laps below cannot end either round early.
+  const slowSnake = runningGame({ powerUpChance: 0, baseInterval: 200, walls: 'wrap' });
+  const fastSnake = runningGame({ powerUpChance: 0, baseInterval: 60, walls: 'wrap' });
+
+  for (const state of [slowSnake, fastSnake]) {
+    state.food = { x: 9, y: 9 };
+    state.effects.ghost = 1000;
+    // The fast snake fits more than three times as many moves into the second.
+    const moves = Math.round(1000 / state.tickInterval);
+    for (let i = 0; i < moves; i += 1) tick(state, firstCell);
+    advanceClock(state, 1000, firstCell);
+  }
+
+  assert.equal(slowSnake.effects.ghost, 0);
+  assert.equal(fastSnake.effects.ghost, 0, 'ticking must not spend an effect');
 });
 
 test('slow stretches the tick interval without changing the underlying speed', () => {
@@ -273,11 +306,12 @@ test('ghost expiring restores the collision rule', () => {
   ];
   state.direction = { x: 0, y: -1 };
   state.food = { x: 9, y: 9 };
-  state.effects.ghost = 1;
+  state.effects.ghost = 500;
 
-  // The last ghost tick carries the snake up and out of its own coil.
+  // Ghost carries the snake up and out of its own coil, and then runs out.
   tick(state, firstCell);
   assert.equal(state.status, 'running');
+  advanceClock(state, 500, firstCell);
   assert.equal(state.effects.ghost, 0);
 
   // With the effect gone, the same coil and the same turn are lethal again.
@@ -299,13 +333,13 @@ test('magnet drags the food one square closer every other tick', () => {
   state.snake = [{ x: 2, y: 2 }];
   state.direction = { x: 0, y: -1 }; // steering away from the food
   state.food = { x: 8, y: 2 };
-  state.effects.magnet = 8;
+  state.effects.magnet = 5000;
 
   tick(state, firstCell);
-  assert.deepEqual(state.food, { x: 7, y: 2 }, 'pulled on an even tick');
+  assert.deepEqual(state.food, { x: 7, y: 2 }, 'pulled on the first move');
 
   tick(state, firstCell);
-  assert.deepEqual(state.food, { x: 7, y: 2 }, 'held on the odd tick');
+  assert.deepEqual(state.food, { x: 7, y: 2 }, 'and held on the next one');
 });
 
 test('magnet never drags the food onto the snake', () => {
@@ -318,7 +352,7 @@ test('magnet never drags the food onto the snake', () => {
   ];
   state.direction = { x: 0, y: -1 };
   state.food = { x: 6, y: 2 };
-  state.effects.magnet = 8;
+  state.effects.magnet = 5000;
 
   tick(state, firstCell);
 
@@ -331,13 +365,13 @@ test('magnet never drags the food onto the snake', () => {
 test('effects count down and stop on their own', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.effects.slow = 2;
+  state.effects.slow = 200;
 
-  tick(state, firstCell);
-  assert.equal(state.effects.slow, 1);
-  tick(state, firstCell);
+  advanceClock(state, 100, firstCell);
+  assert.equal(state.effects.slow, 100);
+  advanceClock(state, 100, firstCell);
   assert.equal(state.effects.slow, 0);
-  tick(state, firstCell);
+  advanceClock(state, 500, firstCell);
   assert.equal(state.effects.slow, 0, 'never goes negative');
 });
 
@@ -350,7 +384,7 @@ test('a collectible in the last free square does not fake a win', () => {
   ];
   state.direction = { x: 0, y: -1 };
   state.food = { x: 0, y: 0 };
-  state.powerUp = { type: 'magnet', x: 1, y: 0, ticksLeft: 20 };
+  state.powerUp = { type: 'magnet', x: 1, y: 0, msLeft: 5000 };
 
   tick(state, firstCell);
 
@@ -373,11 +407,11 @@ test('spawnPowerUp reports no room rather than overlapping', () => {
 test('feast puts four food items on the board at once', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.powerUp = { type: 'feast', x: 6, y: 5, ticksLeft: 20 };
+  state.powerUp = { type: 'feast', x: 6, y: 5, msLeft: 5000 };
 
   tick(state, firstCell);
 
-  assert.equal(state.effects.feast, POWER_UPS.feast.duration - 1);
+  assert.equal(state.effects.feast, POWER_UPS.feast.duration);
   assert.equal(state.bonusFood.length, state.config.feastMultiplier - 1);
 
   const cells = [state.food, ...state.bonusFood];
@@ -391,7 +425,7 @@ test('feast puts four food items on the board at once', () => {
 test('eating a bonus crumb scores and is topped straight back up', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.effects.feast = 20;
+  state.effects.feast = 5000;
   state.bonusFood = [{ x: 6, y: 5 }, { x: 0, y: 8 }, { x: 1, y: 8 }];
   const length = state.snake.length;
 
@@ -407,13 +441,13 @@ test('eating a bonus crumb scores and is topped straight back up', () => {
 test('bonus crumbs vanish when the effect ends', () => {
   const state = runningGame({ powerUpChance: 0 });
   state.food = { x: 9, y: 9 };
-  state.effects.feast = 2;
+  state.effects.feast = 200;
   state.bonusFood = [{ x: 0, y: 8 }, { x: 1, y: 8 }, { x: 2, y: 8 }];
 
-  tick(state, firstCell);
+  advanceClock(state, 100, firstCell);
   assert.equal(state.bonusFood.length, 3, 'still out while the effect runs');
 
-  tick(state, firstCell);
+  advanceClock(state, 100, firstCell);
   assert.equal(state.effects.feast, 0);
   assert.deepEqual(state.bonusFood, [], 'and gone the moment it ends');
   assert.deepEqual(state.food, { x: 9, y: 9 }, 'the ordinary food stays');
@@ -433,7 +467,7 @@ test('bonus crumbs are not topped up once the effect has ended', () => {
 test('bonus crumbs never spawn onto the food, the snake or a collectible', () => {
   const state = runningGame({ powerUpChance: 0, feastMultiplier: 6 });
   state.food = { x: 9, y: 9 };
-  state.powerUp = { type: 'feast', x: 6, y: 5, ticksLeft: 20 };
+  state.powerUp = { type: 'feast', x: 6, y: 5, msLeft: 5000 };
 
   tick(state, Math.random);
 
@@ -451,7 +485,7 @@ test('bonus food gives up rather than crowding a nearly full board', () => {
     { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 1 },
   ];
   state.food = { x: 0, y: 2 };
-  state.effects.feast = 10;
+  state.effects.feast = 5000;
 
   assert.equal(spawnBonusFood(state, firstCell), null);
 });
@@ -462,11 +496,71 @@ test('magnet drags the bonus crumbs too', () => {
   state.direction = { x: 0, y: -1 };
   state.food = { x: 8, y: 2 };
   state.bonusFood = [{ x: 2, y: 8 }];
-  state.effects.magnet = 8;
-  state.effects.feast = 8;
+  state.effects.magnet = 5000;
+  state.effects.feast = 5000;
 
   tick(state, firstCell);
 
   assert.deepEqual(state.food, { x: 7, y: 2 });
   assert.deepEqual(state.bonusFood[0], { x: 2, y: 7 });
+});
+
+// --- Time attack ------------------------------------------------------------
+
+test('classic mode has no clock', () => {
+  const state = runningGame();
+
+  assert.equal(state.timeLeft, null);
+
+  advanceClock(state, 120_000, firstCell);
+
+  assert.equal(state.status, 'running', 'a classic round never times out');
+});
+
+test('time attack starts on the configured limit and drains in real time', () => {
+  const state = runningGame({ mode: 'time', timeLimit: 60_000, powerUpChance: 0 });
+
+  assert.equal(state.timeLeft, 60_000);
+
+  advanceClock(state, 16, firstCell);
+  assert.equal(state.timeLeft, 59_984);
+
+  // Moves cost nothing: only elapsed time does.
+  for (let i = 0; i < 5; i += 1) tick(state, firstCell);
+  assert.equal(state.timeLeft, 59_984);
+});
+
+test('time attack ends the round when the clock runs out', () => {
+  const state = runningGame({ mode: 'time', timeLimit: 1000, powerUpChance: 0 });
+  state.food = { x: 6, y: 5 };
+
+  tick(state, firstCell);
+  assert.equal(state.score, 1);
+
+  advanceClock(state, 900, firstCell);
+  assert.equal(state.status, 'running');
+
+  advanceClock(state, 200, firstCell);
+  assert.equal(state.status, 'timeup');
+  assert.equal(state.timeLeft, 0, 'the clock never goes negative');
+  assert.equal(state.score, 1, 'and the score is kept');
+});
+
+test('a timed out round stops moving', () => {
+  const state = runningGame({ mode: 'time', timeLimit: 100, powerUpChance: 0 });
+  advanceClock(state, 100, firstCell);
+
+  const head = { ...state.snake[0] };
+  tick(state, firstCell);
+
+  assert.deepEqual(state.snake[0], head);
+});
+
+test('the clock is paused with the game', () => {
+  const state = runningGame({ mode: 'time', timeLimit: 60_000, powerUpChance: 0 });
+  state.status = 'paused';
+
+  advanceClock(state, 5000, firstCell);
+
+  assert.equal(state.timeLeft, 60_000);
 });

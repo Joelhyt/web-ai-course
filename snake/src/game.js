@@ -83,16 +83,16 @@ export function spawnPowerUp(state, rng = Math.random) {
   const type = POWER_UP_TYPES[
     Math.min(POWER_UP_TYPES.length - 1, Math.floor(rng() * POWER_UP_TYPES.length))
   ];
-  return { type, x: cell.x, y: cell.y, ticksLeft: state.config.powerUpLifetime };
+  return { type, x: cell.x, y: cell.y, msLeft: state.config.powerUpLifetime };
 }
 
-/** Ticks remaining on an effect, 0 when it is not running. */
-export function effectTicks(state, type) {
+/** Milliseconds remaining on an effect, 0 when it is not running. */
+export function effectMs(state, type) {
   return state.effects[type] ?? 0;
 }
 
 export function isEffectActive(state, type) {
-  return effectTicks(state, type) > 0;
+  return effectMs(state, type) > 0;
 }
 
 /**
@@ -125,11 +125,16 @@ export function createGame(overrides = {}, rng = Math.random) {
     bonusFood: [],
     powerUp: null,
     // Ticks remaining per effect. Absent from the board state means inactive.
+    // Milliseconds remaining per effect, counted down by `advanceClock`.
     effects: { slow: 0, ghost: 0, magnet: 0, feast: 0 },
+    // Magnet moves the food on every other *move*, so its cadence is the one
+    // thing here that is deliberately measured in ticks rather than time.
+    magnetPhase: 0,
     // The first collectible waits out a cooldown too, so a round never opens
     // with one already sitting next to the snake.
     powerUpCooldown: config.powerUpCooldown,
     score: 0,
+    timeLeft: config.mode === 'time' ? config.timeLimit : null,
     tickInterval: config.baseInterval,
     config,
   };
@@ -235,10 +240,10 @@ function collectPowerUp(state, head, rng) {
 }
 
 /** Ages the collectible on the board, and rolls for a new one when there is none. */
-function advancePowerUps(state, rng) {
+function advancePowerUps(state, dt, rng) {
   if (state.powerUp) {
-    state.powerUp.ticksLeft -= 1;
-    if (state.powerUp.ticksLeft <= 0) {
+    state.powerUp.msLeft -= dt;
+    if (state.powerUp.msLeft <= 0) {
       state.powerUp = null;
       state.powerUpCooldown = state.config.powerUpCooldown;
     }
@@ -246,18 +251,20 @@ function advancePowerUps(state, rng) {
   }
 
   if (state.powerUpCooldown > 0) {
-    state.powerUpCooldown -= 1;
+    state.powerUpCooldown -= dt;
     return;
   }
 
-  if (rng() < state.config.powerUpChance) {
+  // Scaling the odds by the elapsed time keeps the spawn rate the same whether
+  // the frame took 8ms or 30ms, and independent of how fast the snake is going.
+  if (rng() < state.config.powerUpChance * (dt / 1000)) {
     state.powerUp = spawnPowerUp(state, rng);
   }
 }
 
-function expireEffects(state) {
+function expireEffects(state, dt) {
   for (const type of POWER_UP_TYPES) {
-    if (state.effects[type] > 0) state.effects[type] -= 1;
+    if (state.effects[type] > 0) state.effects[type] = Math.max(0, state.effects[type] - dt);
   }
 
   // Feast's extra food is on loan: whatever was not eaten in time vanishes with
@@ -265,14 +272,40 @@ function expireEffects(state) {
   if (state.effects.feast === 0 && state.bonusFood.length > 0) state.bonusFood = [];
 }
 
+/**
+ * Advances everything that runs on the wall clock rather than on moves:
+ * effect timers, the collectible's lifetime and spawn roll, and the time attack
+ * countdown. Called once per frame with the elapsed milliseconds, so none of it
+ * is affected by how fast the snake happens to be moving — which is the whole
+ * point: a Ghost collected at score 60 has to last as long as one at score 0.
+ *
+ * A stopped game does not age, so nothing drains while the player is paused or
+ * sitting on the ready screen.
+ */
+export function advanceClock(state, dt, rng = Math.random) {
+  if (state.status !== 'running' || dt <= 0) return state;
+
+  expireEffects(state, dt);
+  advancePowerUps(state, dt, rng);
+
+  if (state.timeLeft !== null) {
+    state.timeLeft = Math.max(0, state.timeLeft - dt);
+    if (state.timeLeft === 0) state.status = 'timeup';
+  }
+
+  return state;
+}
+
 /** Advances the game by exactly one move. Mutates and returns `state`. */
 export function tick(state, rng = Math.random) {
   if (state.status !== 'running') return state;
 
-  // Magnet moves the food before the snake does, on every other tick, so the
-  // food closes in at half the snake's pace and stays catchable.
-  if (state.food && isEffectActive(state, 'magnet') && state.effects.magnet % 2 === 0) {
-    pullFood(state);
+  // Magnet moves the food before the snake does, on every other move, starting
+  // with the first one: the food closes in at half the snake's pace, which
+  // keeps it catchable, and the pull is visible immediately.
+  if (isEffectActive(state, 'magnet')) {
+    state.magnetPhase += 1;
+    if (state.magnetPhase % 2 === 1) pullFood(state);
   }
 
   const dir = state.pending.shift() ?? state.direction;
@@ -331,8 +364,6 @@ export function tick(state, rng = Math.random) {
   }
 
   collectPowerUp(state, head, rng);
-  advancePowerUps(state, rng);
-  expireEffects(state);
 
   return state;
 }

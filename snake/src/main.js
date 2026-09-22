@@ -1,7 +1,14 @@
 // Wires the pure game rules to the canvas, the keyboard and the HUD,
 // and owns the animation loop.
 
-import { createGame, tick, queueDirection, effectiveInterval, effectTicks } from './game.js';
+import {
+  createGame,
+  tick,
+  advanceClock,
+  queueDirection,
+  effectiveInterval,
+  effectMs,
+} from './game.js';
 import { render, resizeCanvas } from './renderer.js';
 import { attachKeyboard } from './input.js';
 import { loadHighScore, saveHighScore } from './storage.js';
@@ -14,17 +21,23 @@ const scoreEl = document.getElementById('score');
 const highScoreEl = document.getElementById('high-score');
 const statusEl = document.getElementById('status');
 const wallsEl = document.getElementById('walls');
+const modeEl = document.getElementById('mode');
 const effectsEl = document.getElementById('effects');
+const timeStatEl = document.getElementById('time-stat');
+const timeEl = document.getElementById('time');
 
-let highScore = loadHighScore();
-let state = createGame({ walls: wallsEl.value });
+const settings = () => ({ walls: wallsEl.value, mode: modeEl.value });
+
+let highScore = loadHighScore(modeEl.value);
+let state = createGame(settings());
 let lastFrame = performance.now();
 let accumulator = 0;
 
 resizeCanvas(canvas, ctx, state.config);
 
 function restart() {
-  state = createGame({ walls: wallsEl.value });
+  state = createGame(settings());
+  highScore = loadHighScore(state.config.mode);
   accumulator = 0;
 }
 
@@ -47,8 +60,10 @@ attachKeyboard({
   onRestart: restart,
 });
 
-// Switching wall behaviour mid-round would be ambiguous, so it starts a fresh one.
+// Switching wall behaviour or mode mid-round would be ambiguous, so either
+// starts a fresh one.
 wallsEl.addEventListener('change', restart);
+modeEl.addEventListener('change', restart);
 
 // Coming back to a dead snake because the tab was in the background is miserable.
 document.addEventListener('visibilitychange', () => {
@@ -63,8 +78,16 @@ const STATUS_LABEL = {
   running: 'Playing',
   paused: 'Paused',
   over: 'Game over',
+  timeup: "Time's up",
   won: 'Cleared!',
 };
+
+// Tenths below ten seconds: whole seconds read as frozen when they are the
+// thing the player is racing, and the last stretch is where the tension is.
+function formatClock(ms) {
+  const seconds = ms / 1000;
+  return seconds >= 10 ? `${Math.ceil(seconds)}s` : `${seconds.toFixed(1)}s`;
+}
 
 // One chip per power-up, built once and then only shown, hidden and refilled.
 // Rebuilding the list every frame would thrash the DOM 60 times a second.
@@ -94,11 +117,11 @@ const chips = new Map(POWER_UP_TYPES.map((type) => {
 
 function updateEffects() {
   for (const type of POWER_UP_TYPES) {
-    const ticks = effectTicks(state, type);
+    const ms = effectMs(state, type);
     const { chip, bar } = chips.get(type);
-    chip.hidden = ticks <= 0;
-    if (ticks > 0) {
-      bar.style.width = `${(ticks / POWER_UPS[type].duration) * 100}%`;
+    chip.hidden = ms <= 0;
+    if (ms > 0) {
+      bar.style.width = `${(ms / POWER_UPS[type].duration) * 100}%`;
     }
   }
 }
@@ -107,6 +130,13 @@ function updateHud() {
   scoreEl.textContent = String(state.score);
   highScoreEl.textContent = String(highScore);
   statusEl.textContent = STATUS_LABEL[state.status];
+
+  timeStatEl.hidden = state.timeLeft === null;
+  if (state.timeLeft !== null) {
+    timeEl.textContent = formatClock(state.timeLeft);
+    timeEl.classList.toggle('urgent', state.timeLeft <= 10_000);
+  }
+
   updateEffects();
 }
 
@@ -117,6 +147,10 @@ function frame(now) {
   lastFrame = now;
 
   if (state.status === 'running') {
+    // Effect timers, the collectible's lifetime and the time attack clock all
+    // run on this delta rather than on ticks, so none of them is shortened by
+    // a fast snake.
+    advanceClock(state, delta);
     accumulator += delta;
     // A fixed timestep keeps the snake moving at the same speed regardless of
     // whether the display refreshes at 60Hz, 120Hz or 144Hz. The interval is
@@ -132,7 +166,7 @@ function frame(now) {
       accumulator = 0;
       if (state.score > highScore) {
         highScore = state.score;
-        saveHighScore(highScore);
+        saveHighScore(state.config.mode, highScore);
       }
     }
   } else {
