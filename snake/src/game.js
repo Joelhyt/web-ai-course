@@ -45,13 +45,39 @@ function pick(free, rng) {
  * a collectible in the last free square would fake a win.
  */
 export function spawnFood(state, rng = Math.random) {
-  const powerUp = state.powerUp;
-  return pick(freeCells(state, [powerUp]), rng) ?? pick(freeCells(state), rng);
+  const clutter = [state.powerUp, ...state.bonusFood];
+  return pick(freeCells(state, clutter), rng)
+    ?? pick(freeCells(state, state.bonusFood), rng)
+    ?? pick(freeCells(state), rng);
+}
+
+/**
+ * One of the extra food items Feast puts out. These are deliberately *not*
+ * candidates for the win check: the round is only cleared when the ordinary
+ * food has nowhere left to go.
+ */
+export function spawnBonusFood(state, rng = Math.random) {
+  const clutter = [state.powerUp, state.food, ...state.bonusFood];
+  const free = freeCells(state, clutter);
+  // Bonus food bows out when the board is tight rather than crowding the last
+  // squares the player needs to manoeuvre in.
+  if (free.length <= state.config.feastMultiplier) return null;
+  return pick(free, rng);
+}
+
+/** Tops the board back up to `feastMultiplier` items while Feast is running. */
+function refillBonusFood(state, rng) {
+  const wanted = state.config.feastMultiplier - 1; // the ordinary food is the first
+  while (state.bonusFood.length < wanted) {
+    const cell = spawnBonusFood(state, rng);
+    if (!cell) return;
+    state.bonusFood.push(cell);
+  }
 }
 
 /** A collectible in a free square, away from the food. Null if there is no room. */
 export function spawnPowerUp(state, rng = Math.random) {
-  const cell = pick(freeCells(state, [state.food]), rng);
+  const cell = pick(freeCells(state, [state.food, ...state.bonusFood]), rng);
   if (!cell) return null;
 
   const type = POWER_UP_TYPES[
@@ -95,9 +121,11 @@ export function createGame(overrides = {}, rng = Math.random) {
     direction: { x: 1, y: 0 },
     pending: [],
     food: null,
+    // Extra food items, present only while Feast is running. They vanish with it.
+    bonusFood: [],
     powerUp: null,
     // Ticks remaining per effect. Absent from the board state means inactive.
-    effects: { slow: 0, ghost: 0, magnet: 0 },
+    effects: { slow: 0, ghost: 0, magnet: 0, feast: 0 },
     // The first collectible waits out a cooldown too, so a round never opens
     // with one already sitting next to the snake.
     powerUpCooldown: config.powerUpCooldown,
@@ -148,20 +176,20 @@ function nextHead(state, dir) {
 }
 
 /**
- * Drags the food one square toward the head along its longer axis, falling back
- * to the other axis when the direct step is blocked by the snake.
+ * Drags one food item a square toward the head along its longer axis, falling
+ * back to the other axis when the direct step is blocked. Returns where it
+ * ended up.
  *
- * Two deliberate restrictions keep Magnet fun rather than degenerate: the food
- * never moves onto a square the snake occupies, and it never steps while it is
- * already adjacent to the head — otherwise it would retreat ahead of a snake
- * travelling away from it and could never be caught.
+ * Two deliberate restrictions keep Magnet fun rather than degenerate: food
+ * never moves onto an occupied square, and it never steps while it is already
+ * adjacent to the head — otherwise it would retreat ahead of a snake travelling
+ * away from it and could never be caught.
  */
-function pullFood(state) {
+function pulled(state, food, taken) {
   const head = state.snake[0];
-  const food = state.food;
   const dx = head.x - food.x;
   const dy = head.y - food.y;
-  if (Math.abs(dx) + Math.abs(dy) <= 1) return;
+  if (Math.abs(dx) + Math.abs(dy) <= 1) return food;
 
   const horizontal = { x: food.x + Math.sign(dx), y: food.y };
   const vertical = { x: food.x, y: food.y + Math.sign(dy) };
@@ -173,12 +201,27 @@ function pullFood(state) {
     if (cellsEqual(cell, food)) continue; // already aligned on that axis
     if (state.snake.some((seg) => cellsEqual(seg, cell))) continue;
     if (state.powerUp && cellsEqual(cell, state.powerUp)) continue;
-    state.food = cell;
-    return;
+    if (taken.some((other) => cellsEqual(other, cell))) continue;
+    return cell;
   }
+  return food;
 }
 
-function collectPowerUp(state, head) {
+/** Magnet applies to every food item on the board, Feast's extras included. */
+function pullFood(state) {
+  const hasMain = state.food !== null;
+  const items = hasMain ? [state.food, ...state.bonusFood] : state.bonusFood.slice();
+
+  for (let i = 0; i < items.length; i += 1) {
+    // Every other item blocks this one, so two crumbs never stack up.
+    items[i] = pulled(state, items[i], items.filter((_, j) => j !== i));
+  }
+
+  if (hasMain) state.food = items.shift();
+  state.bonusFood = items;
+}
+
+function collectPowerUp(state, head, rng) {
   const powerUp = state.powerUp;
   if (!powerUp || !cellsEqual(powerUp, head)) return;
 
@@ -187,6 +230,8 @@ function collectPowerUp(state, head) {
   state.effects[powerUp.type] = POWER_UPS[powerUp.type].duration;
   state.powerUp = null;
   state.powerUpCooldown = state.config.powerUpCooldown;
+
+  if (powerUp.type === 'feast') refillBonusFood(state, rng);
 }
 
 /** Ages the collectible on the board, and rolls for a new one when there is none. */
@@ -214,6 +259,10 @@ function expireEffects(state) {
   for (const type of POWER_UP_TYPES) {
     if (state.effects[type] > 0) state.effects[type] -= 1;
   }
+
+  // Feast's extra food is on loan: whatever was not eaten in time vanishes with
+  // the effect. Only the ordinary food carries on between rounds of it.
+  if (state.effects.feast === 0 && state.bonusFood.length > 0) state.bonusFood = [];
 }
 
 /** Advances the game by exactly one move. Mutates and returns `state`. */
@@ -236,7 +285,9 @@ export function tick(state, rng = Math.random) {
   }
 
   const head = { x, y };
-  const eating = state.food !== null && cellsEqual(head, state.food);
+  const onFood = state.food !== null && cellsEqual(head, state.food);
+  const onBonus = state.bonusFood.some((food) => cellsEqual(food, head));
+  const eating = onFood || onBonus;
 
   // Unless the snake is growing, the tail vacates its square on this same tick,
   // so moving into it is legal and must not count as a self-collision.
@@ -253,21 +304,33 @@ export function tick(state, rng = Math.random) {
   state.snake.unshift(head);
 
   if (eating) {
+    // Feast's crumbs are worth the same as the ordinary food, and speed the
+    // snake up the same way — the power-up trades difficulty for score.
     state.score += 1;
     state.tickInterval = Math.max(
       state.config.minInterval,
       state.config.baseInterval - state.score * state.config.speedStep,
     );
-    state.food = spawnFood(state, rng);
-    if (state.food === null) {
-      state.status = 'won';
-      return state;
+
+    if (onBonus) {
+      state.bonusFood = state.bonusFood.filter((food) => !cellsEqual(food, head));
     }
+
+    if (onFood) {
+      state.food = spawnFood(state, rng);
+      if (state.food === null) {
+        state.status = 'won';
+        return state;
+      }
+    }
+
+    // Keep the board at 4x for as long as the effect has left to run.
+    if (isEffectActive(state, 'feast')) refillBonusFood(state, rng);
   } else {
     state.snake.pop();
   }
 
-  collectPowerUp(state, head);
+  collectPowerUp(state, head, rng);
   advancePowerUps(state, rng);
   expireEffects(state);
 

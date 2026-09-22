@@ -27,17 +27,20 @@ The snake speeds up as it grows, and the best score is kept in `localStorage`.
 
 ## Power-ups
 
-Three collectibles take turns appearing on a random free square. One is on the board at a time, it lasts about eight seconds before fading (blinking for the last stretch), and there is a cooldown before the next one rolls — including at the start of a round, so nothing lands in the snake's lap. Drive the head over one to pick it up; an active effect is shown as a chip under the board with a draining timer, and as a coloured frame around the board itself.
+Four collectibles take turns appearing on a random free square. One is on the board at a time, it lasts about eight seconds before fading (blinking for the last stretch), and there is a cooldown before the next one rolls — including at the start of a round, so nothing lands in the snake's lap. Drive the head over one to pick it up; an active effect is shown as a chip under the board with a draining timer, and as a coloured frame around the board itself.
 
 | | Power-up | Effect |
 |---|---|---|
 | Cyan hourglass | **Slow** | The tick interval is multiplied by `slowFactor` (1.9x) for ~55 ticks. It scales the score-derived speed rather than replacing it, so it is worth the same relief late in a round as it is early. |
 | Violet ghost | **Ghost** | Self-collision is switched off for ~45 ticks and the snake is drawn translucent with a dashed outline — the transparency *is* the rule. Walls still apply. |
-| Amber magnet | **Magnet** | For ~55 ticks the food is dragged one square toward the head, on every other tick, along its longer axis. A dotted tether shows the pull. |
+| Amber magnet | **Magnet** | For ~55 ticks every food item is dragged one square toward the head, on every other tick, along its longer axis. A dotted tether shows the pull. |
+| Rose cluster | **Feast** | For ~50 ticks the board carries `feastMultiplier` (4) food items instead of one. The three extras are on loan: they are drawn smaller inside a dashed ring, blink over the effect's last ticks, and **any that are not eaten vanish when it ends**. |
 
 Every duration is counted in **ticks rather than milliseconds**, so a slowed snake gets the same number of *moves* out of an effect as a fast one. Two restrictions keep Magnet from being degenerate: the food never steps onto the snake, and it holds still once it is adjacent to the head — otherwise it would flee ahead of a snake travelling away from it and could never be caught. Re-collecting a running effect refreshes it instead of stacking, so the HUD countdown always means what it says.
 
-Shape, not just colour, distinguishes the three on the board — colour alone is unreadable for the roughly 8% of players with a colour vision deficiency.
+Feast's crumbs score and grow the snake exactly like ordinary food — including the speed-up per point — so the power-up trades difficulty for score rather than handing one out. They never spawn on the snake, the food or the collectible, and they bow out entirely when the board is down to its last few squares rather than crowding the room the player needs to manoeuvre in. Only the *ordinary* food counts toward the win: a cleared board still means the real food has nowhere left to go.
+
+Shape, not just colour, distinguishes them on the board — colour alone is unreadable for the roughly 8% of players with a colour vision deficiency.
 
 ## Tests
 
@@ -75,7 +78,8 @@ The details that separate this from a naive Snake, and the ones worth comparing 
 - **`devicePixelRatio` scaling** so the grid stays crisp on HiDPI monitors.
 - **Auto-pause on tab blur**, so you do not come back to a dead snake.
 - **Power-ups live in the rules, not the loop.** Effects and collectible lifetimes are tick counts on the state, so all three are covered by plain Node tests with no fake clock. The only thing the loop does differently is re-read `effectiveInterval(state)` inside the catch-up loop, since Slow can start or end on any tick.
-- **A collectible in the last free square cannot fake a win.** Food avoids the power-up when there is room to avoid it, and falls back to any free square otherwise, so "no free squares" still means exactly that.
+- **A collectible in the last free square cannot fake a win.** Food avoids the power-up and Feast's crumbs when there is room to, and relaxes those constraints one at a time otherwise, so "no free squares" still means exactly that.
+- **Feast's food is on loan.** The extras live in `state.bonusFood` and are cleared the tick the effect hits zero, so an uneaten crumb can never outlive the power-up that put it there.
 - **Storage never throws** — `localStorage` is unavailable in Safari private mode and under some privacy settings, so every access is guarded with an in-memory fallback.
 
 ## Comparison notes
@@ -85,4 +89,4 @@ The details that separate this from a naive Snake, and the ones worth comparing 
 | Model | Claude Opus 5 (Claude Code) |
 | Approach | Plan mode: requirements clarified up front, then implemented from an approved plan |
 | Dependencies | None |
-| Tests | 23, via `node --test` |
+| Tests | 30, via `node --test` |

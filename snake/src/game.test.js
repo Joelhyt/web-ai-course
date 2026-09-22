@@ -11,6 +11,7 @@ import {
   queueDirection,
   spawnFood,
   spawnPowerUp,
+  spawnBonusFood,
   effectiveInterval,
 } from './game.js';
 import { POWER_UPS } from './config.js';
@@ -183,7 +184,8 @@ test('a fresh round starts with no collectible and a cooldown', () => {
 
   assert.equal(state.powerUp, null);
   assert.equal(state.powerUpCooldown, state.config.powerUpCooldown);
-  assert.deepEqual(state.effects, { slow: 0, ghost: 0, magnet: 0 });
+  assert.deepEqual(state.effects, { slow: 0, ghost: 0, magnet: 0, feast: 0 });
+  assert.deepEqual(state.bonusFood, []);
 });
 
 test('a collectible appears once the cooldown lapses, and never on the food', () => {
@@ -366,4 +368,105 @@ test('spawnPowerUp reports no room rather than overlapping', () => {
   state.food = { x: 1, y: 1 };
 
   assert.equal(spawnPowerUp(state, firstCell), null);
+});
+
+test('feast puts four food items on the board at once', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.food = { x: 9, y: 9 };
+  state.powerUp = { type: 'feast', x: 6, y: 5, ticksLeft: 20 };
+
+  tick(state, firstCell);
+
+  assert.equal(state.effects.feast, POWER_UPS.feast.duration - 1);
+  assert.equal(state.bonusFood.length, state.config.feastMultiplier - 1);
+
+  const cells = [state.food, ...state.bonusFood];
+  const unique = new Set(cells.map((c) => `${c.x},${c.y}`));
+  assert.equal(unique.size, cells.length, 'food items stacked on one square');
+  for (const cell of state.bonusFood) {
+    assert.ok(!state.snake.some((seg) => cellsAt(seg, cell)));
+  }
+});
+
+test('eating a bonus crumb scores and is topped straight back up', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.food = { x: 9, y: 9 };
+  state.effects.feast = 20;
+  state.bonusFood = [{ x: 6, y: 5 }, { x: 0, y: 8 }, { x: 1, y: 8 }];
+  const length = state.snake.length;
+
+  tick(state, firstCell);
+
+  assert.equal(state.score, 1);
+  assert.equal(state.snake.length, length + 1, 'a crumb grows the snake too');
+  assert.deepEqual(state.food, { x: 9, y: 9 }, 'the ordinary food is untouched');
+  assert.equal(state.bonusFood.length, state.config.feastMultiplier - 1);
+  assert.ok(!state.bonusFood.some((food) => cellsAt(food, { x: 6, y: 5 })));
+});
+
+test('bonus crumbs vanish when the effect ends', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.food = { x: 9, y: 9 };
+  state.effects.feast = 2;
+  state.bonusFood = [{ x: 0, y: 8 }, { x: 1, y: 8 }, { x: 2, y: 8 }];
+
+  tick(state, firstCell);
+  assert.equal(state.bonusFood.length, 3, 'still out while the effect runs');
+
+  tick(state, firstCell);
+  assert.equal(state.effects.feast, 0);
+  assert.deepEqual(state.bonusFood, [], 'and gone the moment it ends');
+  assert.deepEqual(state.food, { x: 9, y: 9 }, 'the ordinary food stays');
+});
+
+test('bonus crumbs are not topped up once the effect has ended', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.food = { x: 6, y: 5 };
+  state.effects.feast = 0;
+
+  tick(state, firstCell); // eats the ordinary food
+
+  assert.equal(state.score, 1);
+  assert.deepEqual(state.bonusFood, []);
+});
+
+test('bonus crumbs never spawn onto the food, the snake or a collectible', () => {
+  const state = runningGame({ powerUpChance: 0, feastMultiplier: 6 });
+  state.food = { x: 9, y: 9 };
+  state.powerUp = { type: 'feast', x: 6, y: 5, ticksLeft: 20 };
+
+  tick(state, Math.random);
+
+  for (const crumb of state.bonusFood) {
+    assert.ok(!cellsAt(crumb, state.food), 'landed on the food');
+    assert.ok(!state.snake.some((seg) => cellsAt(seg, crumb)), 'landed on the snake');
+  }
+});
+
+test('bonus food gives up rather than crowding a nearly full board', () => {
+  const state = createGame({ cols: 3, rows: 3, powerUpChance: 0 }, firstCell);
+  state.status = 'running';
+  state.snake = [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+    { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 1 },
+  ];
+  state.food = { x: 0, y: 2 };
+  state.effects.feast = 10;
+
+  assert.equal(spawnBonusFood(state, firstCell), null);
+});
+
+test('magnet drags the bonus crumbs too', () => {
+  const state = runningGame({ powerUpChance: 0 });
+  state.snake = [{ x: 2, y: 2 }];
+  state.direction = { x: 0, y: -1 };
+  state.food = { x: 8, y: 2 };
+  state.bonusFood = [{ x: 2, y: 8 }];
+  state.effects.magnet = 8;
+  state.effects.feast = 8;
+
+  tick(state, firstCell);
+
+  assert.deepEqual(state.food, { x: 7, y: 2 });
+  assert.deepEqual(state.bonusFood[0], { x: 2, y: 7 });
 });

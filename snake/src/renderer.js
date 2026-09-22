@@ -100,6 +100,20 @@ function drawGhostGlyph(ctx, cx, cy, r) {
   ctx.restore();
 }
 
+/** A cluster of crumbs: Feast. */
+function drawFeastGlyph(ctx, cx, cy, r) {
+  const offsets = [
+    [0, -r * 0.5, r * 0.4],
+    [-r * 0.52, r * 0.34, r * 0.36],
+    [r * 0.52, r * 0.34, r * 0.36],
+  ];
+  for (const [dx, dy, radius] of offsets) {
+    ctx.beginPath();
+    ctx.arc(cx + dx, cy + dy, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 /** Horseshoe magnet: a thick arc with two legs. */
 function drawMagnetGlyph(ctx, cx, cy, r, color) {
   const width = r * 0.42;
@@ -152,23 +166,56 @@ function drawPowerUp(ctx, powerUp, cell, time) {
 
   if (powerUp.type === 'slow') drawSlowGlyph(ctx, cx, cy, r);
   else if (powerUp.type === 'ghost') drawGhostGlyph(ctx, cx, cy, r);
+  else if (powerUp.type === 'feast') drawFeastGlyph(ctx, cx, cy, r);
   else drawMagnetGlyph(ctx, cx, cy, r, meta.color);
 
   ctx.restore();
 }
 
-/** Dotted tether from the food to the head while Magnet is pulling. */
+/**
+ * On-loan food from Feast. Drawn smaller than the real thing and inside a
+ * dashed ring — the broken outline is the tell that it is temporary — and it
+ * blinks out in step with the effect's last ticks.
+ */
+function drawBonusFood(ctx, food, cell, ticksLeft, time) {
+  const cx = food.x * cell + cell / 2;
+  const cy = food.y * cell + cell / 2;
+  const expiring = ticksLeft <= 14;
+
+  ctx.save();
+  ctx.globalAlpha = expiring ? 0.35 + Math.abs(Math.sin(time / 130)) * 0.65 : 1;
+  ctx.fillStyle = COLORS.bonusFood;
+  ctx.beginPath();
+  ctx.arc(cx, cy, cell * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = COLORS.bonusFood;
+  ctx.globalAlpha *= 0.75;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.lineDashOffset = time / 90;
+  ctx.beginPath();
+  ctx.arc(cx, cy, cell * 0.37, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Dotted tethers from every food item to the head while Magnet is pulling. */
 function drawMagnetPull(ctx, state, cell) {
   const head = state.snake[0];
-  const { food } = state;
+  const items = state.food ? [state.food, ...state.bonusFood] : state.bonusFood;
+  if (items.length === 0) return;
+
   ctx.save();
   ctx.strokeStyle = POWER_UPS.magnet.color;
   ctx.globalAlpha = 0.5;
   ctx.lineWidth = 2;
   ctx.setLineDash([3, 5]);
   ctx.beginPath();
-  ctx.moveTo(food.x * cell + cell / 2, food.y * cell + cell / 2);
-  ctx.lineTo(head.x * cell + cell / 2, head.y * cell + cell / 2);
+  for (const food of items) {
+    ctx.moveTo(food.x * cell + cell / 2, food.y * cell + cell / 2);
+    ctx.lineTo(head.x * cell + cell / 2, head.y * cell + cell / 2);
+  }
   ctx.stroke();
   ctx.restore();
 }
@@ -182,6 +229,8 @@ function drawSnake(ctx, state, cell, time) {
   const radius = cell * 0.25;
 
   const bodyColor = ghost ? POWER_UPS.ghost.color : slow ? POWER_UPS.slow.color : COLORS.snake;
+  // Ghost and Slow already recolour the snake; Feast deliberately does not, so
+  // the crumbs stay the thing that changed.
   const headColor = ghost || slow ? COLORS.title : COLORS.snakeHead;
 
   ctx.save();
@@ -276,8 +325,11 @@ export function render(ctx, state, time = 0) {
   ctx.fillRect(0, 0, width, height);
 
   drawGrid(ctx, cols, rows, cell);
-  if (state.food && isEffectActive(state, 'magnet')) drawMagnetPull(ctx, state, cell);
+  if (isEffectActive(state, 'magnet')) drawMagnetPull(ctx, state, cell);
   if (state.powerUp) drawPowerUp(ctx, state.powerUp, cell, time);
+  for (const crumb of state.bonusFood) {
+    drawBonusFood(ctx, crumb, cell, effectTicks(state, 'feast'), time);
+  }
   if (state.food) drawFood(ctx, state.food, cell);
   drawSnake(ctx, state, cell, time);
   drawEffectFrames(ctx, state, width, height);

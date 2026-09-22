@@ -18,6 +18,7 @@ export const DEFAULTS = Object.freeze({
   powerUpChance: 0.03, // per-tick odds of one appearing when the board has none
   powerUpLifetime: 60, // ticks a collectible stays on the board before fading
   powerUpCooldown: 40, // ticks before another may appear (also the head start)
+  feastMultiplier: 4, // food items on the board while Feast is running
 });
 
 // At most two inputs are buffered. Any more and turns start feeling delayed
@@ -48,6 +49,12 @@ export const POWER_UPS = Object.freeze({
     color: '#fbbf24',
     detail: 'food is dragged toward the head',
   }),
+  feast: Object.freeze({
+    label: 'Feast',
+    duration: 50,
+    color: '#f472b6',
+    detail: 'four times the food, while it lasts',
+  }),
 });
 
 export const POWER_UP_TYPES = Object.freeze(Object.keys(POWER_UPS));
@@ -58,6 +65,7 @@ export const COLORS = Object.freeze({
   snake: '#4ade80',
   snakeHead: '#bbf7d0',
   food: '#f87171',
+  bonusFood: '#f472b6', // the extra, temporary food Feast puts out
   overlay: 'rgba(16, 21, 28, 0.82)',
   title: '#f8fafc',
   subtitle: '#94a3b8',
