@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snake</title>
+  </head>
+  <body>
+    <main class="app">
+      <h1>Snake</h1>
+      <section class="hud" aria-label="Scoreboard">
+        <p>Score: <span id="score">0</span></p>
+        <p>Best: <span id="best-score">0</span></p>
+        <label class="mode-control" for="wall-mode">
+          Walls:
+          <select id="wall-mode">
+            <option value="solid">Solid</option>
+            <option value="wrap">Wrap around</option>
+          </select>
+        </label>
+      </section>
+      <p id="game-status" class="status" aria-live="polite"></p>
+      <canvas id="game-canvas" role="img" aria-label="Snake game board"></canvas>
+      <p class="instructions">
+        Controls: Arrow keys or WASD to move. Press R to restart after game
+        over. The wall mode can be changed between rounds.
+      </p>
+      <button id="restart-button" type="button" hidden disabled>Restart</button>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

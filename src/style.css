@@ -1,0 +1,86 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f5f5f5;
+  color: #141414;
+}
+
+.app {
+  width: min(92vw, 760px);
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
+  text-align: center;
+  padding: 1rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 1.1rem;
+}
+
+.hud p {
+  margin: 0;
+}
+
+.mode-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mode-control select {
+  font: inherit;
+  padding: 0.2rem 0.4rem;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.25rem;
+  font-weight: 600;
+}
+
+#game-canvas {
+  width: min(80vmin, 640px);
+  height: min(80vmin, 640px);
+  border: 2px solid #222;
+  background: #fff;
+}
+
+.instructions {
+  margin: 0;
+  max-width: 40rem;
+}
+
+#restart-button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #222;
+  background: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+#restart-button:hover {
+  background: #efefef;
+}
