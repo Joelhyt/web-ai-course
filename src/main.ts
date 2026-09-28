@@ -1,4 +1,4 @@
 import "./style.css";
-import { mountSnakeGame } from "./app";
+import { mountArcade } from "./arcade";
 
-mountSnakeGame();
+mountArcade();

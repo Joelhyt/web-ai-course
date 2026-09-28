@@ -1,6 +1,10 @@
-# Snake (Classic Browser Game)
+# Browser Arcade: Snake + Tetris
 
-Classic Snake implemented as a static web app using TypeScript and Canvas 2D.
+This project is a two-game browser arcade with a launcher and hosted game views.
+
+- **Snake**: complete and playable with Classic + Time Attack modes.
+- **Tetris**: playable modern core with hold, next-piece preview, pause, and local best score.
+- Arcade flow: the home view shows game cards. Selecting a card starts a fresh run. Returning home ends the active run.
 
 ## Requirements
 
@@ -18,15 +22,6 @@ Classic Snake implemented as a static web app using TypeScript and Canvas 2D.
 - `npm run build` — create production bundle in `dist/`
 - `npm run preview` — preview production build locally
 
-## Controls
-
-- Arrow keys or `W`, `A`, `S`, `D` to move
-- `R` to restart after game over
-- Restart button appears when the game ends
-- Game mode selector (Classic / Time Attack) is available between rounds
-- Wall mode selector (Solid / Wrap around) is available between rounds
-- Power-up legend on board: `S` (Slow), `G` (Ghost), `M` (Magnet), `F` (Feast)
-
 ## Browser support
 
 The app uses stable web APIs (Canvas 2D, keyboard events, CSS layout, and `localStorage`) and is intended to run in current versions of:
@@ -36,36 +31,75 @@ The app uses stable web APIs (Canvas 2D, keyboard events, CSS layout, and `local
 - Firefox
 - Safari
 
-## Gameplay rules
+## Snake
 
-### Shared
+### Controls
 
-- **Solid** walls: hitting a wall ends the round
-- **Wrap around** walls: crossing an edge moves the snake to the opposite side
-- Best score is tracked separately per **game mode + wall mode**
+- Arrow keys or `W`, `A`, `S`, `D` to move
+- `R` to restart after game over
+- Mode and wall selectors are available between rounds
+- Power-up legend on board: `S` (Slow), `G` (Ghost), `M` (Magnet), `F` (Feast)
+
+### Rules (current behavior)
+
+- **Solid** walls: wall collision ends the round
+- **Wrap around** walls: crossing an edge wraps to the opposite side
+- Best score is tracked per **game mode + wall mode**
 - Board power-ups expire after 50 movement steps if not collected
 - Power-up effects last 40 movement steps
-- Power-up effects:
-  - **Slow**: movement interval is multiplied by `1.5`
-  - **Ghost**: snake can pass through its own body and is shown with a purple outline while active
-  - **Magnet**: normal food and Feast gold foods each move one legal cell toward the snake head each movement step
-  - **Feast**: spawns and maintains 3 temporary gold foods while active; gold foods are removed when Feast ends
+- **Slow**: movement interval × `1.5`
+- **Ghost**: self-collision is ignored; snake gets a purple outline
+- **Magnet**: normal food and Feast gold foods each move one legal cell toward the snake head per movement step
+- **Feast**: keeps 3 temporary gold foods active; they are removed when Feast ends
 
-### Classic mode
+#### Classic mode
 
-- Snake starts at standard speed and gets faster every 5 points
-- Speed increases by reducing move interval by 10 ms per threshold, down to a 60 ms minimum
-- Power-ups appear only after collecting food:
-  - 25% spawn chance
-  - one board power-up at a time
-- Only one active power-up effect can exist at once; no new power-up spawns while an effect is active
+- Speed increases every 5 points
+- Tick interval decreases by 10 ms per threshold (minimum 60 ms)
+- Power-ups spawn only after food collection (25% chance)
+- Only one board power-up at a time
+- Only one active power-up effect at a time
 
-### Time Attack mode
+#### Time Attack mode
 
-- Round lasts 60 seconds; when time hits 0, the round ends
+- 60-second round; reaching 0 ends the round
 - Collisions can still end the round early
-- Snake speed is uncapped and follows an exponential curve: `120 * 0.93^floor(score / 5)` ms
-- Power-up spawn chance is doubled to 50%
-- Up to 4 board power-ups can exist simultaneously
-- Multiple effect types can be active at the same time
-- Collecting a power-up of a type that is already active extends that type by +40 steps
+- Uncapped speed curve: `120 * 0.93^floor(score / 5)` ms
+- Power-up spawn chance is 50%
+- Up to 4 board power-ups can exist at once
+- Multiple effect types can be active at once
+- Re-collecting an active type extends that type by +40 steps
+
+### Snake persistence scope
+
+- Best score is saved locally per **game mode + wall mode**.
+- Snake storage is separate from Tetris storage.
+
+## Tetris (modern core)
+
+### Controls
+
+- `Left` / `Right`: move
+- `Down`: soft drop
+- `Up` or `X`: rotate clockwise
+- `Space`: hard drop
+- `C`: hold
+- `P`: pause/resume
+- `R`: restart after game over
+
+### Rules and scoring (implemented)
+
+- Board size: **10×20**
+- Piece generator: **7-bag randomizer**
+- Rotation system: **clockwise SRS kicks**
+- **Next-piece preview** is shown
+- **Hold** is allowed once per active piece drop
+- Line clear scoring: single/double/triple/tetris = `100/300/500/800 × level`
+- Level increases every 10 cleared lines
+- Gravity increases with level and bottoms out at a fixed minimum interval
+- Pause/resume state is available in active rounds
+
+### Tetris persistence scope
+
+- Tetris best score is saved locally under its own key.
+- Tetris storage is independent from Snake best-score entries.

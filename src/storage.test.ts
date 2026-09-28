@@ -1,7 +1,9 @@
 import {
   createBrowserScoreStorage,
+  createBrowserTetrisScoreStorage,
   parseBestScore,
-  BEST_SCORE_STORAGE_KEY_PREFIX
+  BEST_SCORE_STORAGE_KEY_PREFIX,
+  TETRIS_BEST_SCORE_STORAGE_KEY
 } from "./storage";
 
 function createMemoryStorage() {
@@ -83,5 +85,42 @@ describe("best-score storage", () => {
     expect(adapter.loadBestScore("classic", "solid")).toBe(0);
     adapter.saveBestScore("classic", "solid", 5);
     expect(errors).toEqual(["read", "write"]);
+  });
+
+  it("stores Tetris scores independently from Snake scores", () => {
+    const storage = createMemoryStorage();
+    const snakeStorage = createBrowserScoreStorage(
+      BEST_SCORE_STORAGE_KEY_PREFIX,
+      () => storage,
+      () => {}
+    );
+    const tetrisStorage = createBrowserTetrisScoreStorage(
+      TETRIS_BEST_SCORE_STORAGE_KEY,
+      () => storage,
+      () => {}
+    );
+
+    snakeStorage.saveBestScore("classic", "solid", 12);
+    tetrisStorage.saveBestScore(37);
+
+    expect(snakeStorage.loadBestScore("classic", "solid")).toBe(12);
+    expect(tetrisStorage.loadBestScore()).toBe(37);
+  });
+
+  it("reports unavailable Tetris storage without throwing", () => {
+    const errors: string[] = [];
+    const adapter = createBrowserTetrisScoreStorage(
+      TETRIS_BEST_SCORE_STORAGE_KEY,
+      () => {
+        throw new Error("storage unavailable");
+      },
+      (operation) => {
+        errors.push(operation);
+      }
+    );
+
+    expect(adapter.loadBestScore()).toBe(0);
+    adapter.saveBestScore(5);
+    expect(errors).toEqual(["read", "read"]);
   });
 });

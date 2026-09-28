@@ -1,6 +1,7 @@
 import type { GameMode, WallMode } from "./game/types";
 
 export const BEST_SCORE_STORAGE_KEY_PREFIX = "snake.bestScore";
+export const TETRIS_BEST_SCORE_STORAGE_KEY = "tetris.bestScore";
 
 type StorageErrorReporter = (
   operation: "read" | "write",
@@ -15,6 +16,11 @@ interface StorageLike {
 export interface ScoreStorage {
   loadBestScore(gameMode: GameMode, wallMode: WallMode): number;
   saveBestScore(gameMode: GameMode, wallMode: WallMode, score: number): void;
+}
+
+export interface TetrisScoreStorage {
+  loadBestScore(): number;
+  saveBestScore(score: number): void;
 }
 
 export function parseBestScore(rawValue: string | null): number {
@@ -105,6 +111,55 @@ export function createBrowserScoreStorage(
           buildModeKey(gameMode, wallMode),
           String(Math.floor(score))
         );
+      } catch (error) {
+        reportError("write", error);
+      }
+    }
+  };
+}
+
+export function createBrowserTetrisScoreStorage(
+  key = TETRIS_BEST_SCORE_STORAGE_KEY,
+  storageProvider: () => StorageLike = () => window.localStorage,
+  reportError: StorageErrorReporter = (operation, error) => {
+    console.warn(`Tetris best-score storage ${operation} failed.`, error);
+  }
+): TetrisScoreStorage {
+  function readStorage(): StorageLike | null {
+    try {
+      return storageProvider();
+    } catch (error) {
+      reportError("read", error);
+      return null;
+    }
+  }
+
+  return {
+    loadBestScore(): number {
+      const storage = readStorage();
+      if (!storage) {
+        return 0;
+      }
+
+      try {
+        return parseBestScore(storage.getItem(key));
+      } catch (error) {
+        reportError("read", error);
+        return 0;
+      }
+    },
+    saveBestScore(score): void {
+      if (!Number.isFinite(score) || score < 0) {
+        return;
+      }
+
+      const storage = readStorage();
+      if (!storage) {
+        return;
+      }
+
+      try {
+        storage.setItem(key, String(Math.floor(score)));
       } catch (error) {
         reportError("write", error);
       }

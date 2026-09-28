@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "vitest run src/game/state.test.ts src/game/render.test.ts src/storage.test.ts",
-    "test:e2e": "vitest run src/app.e2e.test.ts --environment jsdom"
+    "test:unit": "vitest run src/game/state.test.ts src/game/render.test.ts src/tetris/state.test.ts src/storage.test.ts",
+    "test:e2e": "vitest run src/app.e2e.test.ts src/arcade.test.ts src/tetris/app.test.ts --environment jsdom"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

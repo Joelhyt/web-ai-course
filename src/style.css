@@ -11,19 +11,130 @@
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  background: #f5f5f5;
+  background: #f3f4f7;
   color: #141414;
 }
 
+#arcade-root {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.arcade-home {
+  width: min(100%, 960px);
+  display: grid;
+  gap: 1.2rem;
+  background: #fff;
+  border: 1px solid #d8d8d8;
+  border-radius: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  box-shadow: 0 0.45rem 1.3rem rgb(0 0 0 / 6%);
+}
+
+.arcade-home-header {
+  text-align: center;
+}
+
+.arcade-home-header h1 {
+  margin: 0 0 0.35rem;
+}
+
+.arcade-home-header p {
+  margin: 0;
+  color: #3a3a3a;
+}
+
+.arcade-card-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.arcade-card {
+  border: 1px solid #d3d3d3;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, #fff 0%, #f8f8f8 100%);
+  padding: 1rem;
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+  min-height: 13rem;
+}
+
+.arcade-card h2,
+.arcade-card p {
+  margin: 0;
+}
+
+.arcade-card p {
+  color: #2f2f2f;
+}
+
+.arcade-play-button,
+.arcade-back-button {
+  justify-self: start;
+  padding: 0.55rem 1.05rem;
+  border: 1px solid #222;
+  border-radius: 0.4rem;
+  background: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 120ms ease-in-out;
+}
+
+.arcade-play-button:hover,
+.arcade-back-button:hover,
+#restart-button:hover {
+  background: #efefef;
+}
+
+.arcade-play-button:focus-visible,
+.arcade-back-button:focus-visible,
+#restart-button:focus-visible,
+#tetris-pause-button:focus-visible,
+#tetris-restart-button:focus-visible {
+  outline: 2px solid #005fcc;
+  outline-offset: 2px;
+}
+
+.arcade-game-view {
+  width: min(100%, 960px);
+  display: grid;
+  gap: 0.85rem;
+  justify-items: stretch;
+}
+
+.arcade-game-host {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+}
+
+.arcade-status {
+  margin: 0;
+  min-height: 1.25rem;
+  font-weight: 600;
+  color: #222;
+}
+
 .app {
-  width: min(92vw, 760px);
+  width: min(100%, 760px);
   display: grid;
   gap: 0.75rem;
   justify-items: center;
   text-align: center;
-  padding: 1rem;
+  padding: clamp(0.85rem, 2vw, 1rem);
+  background: #fff;
+  border: 1px solid #d8d8d8;
+  border-radius: 0.9rem;
+  box-shadow: 0 0.4rem 1.1rem rgb(0 0 0 / 5%);
 }
 
 h1 {
@@ -73,6 +184,13 @@ h1 {
   background: #fff;
 }
 
+#tetris-canvas {
+  width: min(40vmin, 320px);
+  height: auto;
+  border: 2px solid #222;
+  background: #fff;
+}
+
 .instructions {
   margin: 0;
   max-width: 40rem;
@@ -82,10 +200,73 @@ h1 {
   padding: 0.5rem 1rem;
   border: 1px solid #222;
   background: #fff;
+  border-radius: 0.4rem;
   font-size: 1rem;
   cursor: pointer;
 }
 
-#restart-button:hover {
+.tetris-app {
+  width: min(100%, 900px);
+}
+
+.tetris-hud {
+  width: 100%;
+}
+
+.tetris-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+#tetris-pause-button,
+#tetris-restart-button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #222;
+  background: #fff;
+  border-radius: 0.4rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+#tetris-pause-button:hover,
+#tetris-restart-button:hover {
   background: #efefef;
+}
+
+@media (max-width: 640px) {
+  #arcade-root {
+    padding: 0.75rem;
+  }
+
+  .arcade-home {
+    border-radius: 0.8rem;
+    padding: 0.9rem;
+  }
+
+  .arcade-card {
+    min-height: auto;
+  }
+
+  .arcade-play-button,
+  .arcade-back-button {
+    width: 100%;
+    justify-self: stretch;
+    text-align: center;
+  }
+
+  .hud {
+    gap: 0.8rem;
+    font-size: 1rem;
+  }
+
+  #game-canvas {
+    width: min(88vmin, 640px);
+    height: min(88vmin, 640px);
+  }
+
+  #tetris-canvas {
+    width: min(72vmin, 320px);
+  }
 }
