@@ -8,10 +8,19 @@ import { isEffectActive, effectMs } from './game.js';
  * soft on HiDPI and 4K monitors, because the backing store would be stretched.
  * setTransform (rather than scale) keeps repeated calls from compounding.
  */
+/** The window onto the world, in tiles. The whole grid unless a mode scrolls. */
+export function viewSize(config) {
+  return {
+    cols: config.viewCols ?? config.cols,
+    rows: config.viewRows ?? config.rows,
+  };
+}
+
 export function resizeCanvas(canvas, ctx, config) {
   const dpr = window.devicePixelRatio || 1;
-  const cssWidth = config.cols * config.cell;
-  const cssHeight = config.rows * config.cell;
+  const view = viewSize(config);
+  const cssWidth = view.cols * config.cell;
+  const cssHeight = view.rows * config.cell;
 
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
@@ -51,6 +60,267 @@ function drawGrid(ctx, cols, rows, cell) {
     ctx.lineTo(cols * cell, r * cell + 0.5);
   }
   ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
+// Adventure
+// ---------------------------------------------------------------------------
+
+/**
+ * A cheap deterministic hash per tile. Rock needs to look like rubble rather
+ * than graph paper, and a hash gives every tile a stable shade — no noise
+ * texture to ship, and no flicker between frames from a random().
+ */
+function tileNoise(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+/**
+ * The floor is painted light and the rock dark, rather than the other way
+ * round: a room has to read as space carved out of the mass at a glance, while
+ * the snake is moving through it.
+ */
+function drawDungeon(ctx, state, cell, bounds) {
+  const { cols } = state.config;
+
+  for (let y = bounds.top; y <= bounds.bottom; y += 1) {
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      const shade = tileNoise(x, y);
+      const left = x * cell;
+      const top = y * cell;
+
+      if (state.blocked.has(y * cols + x)) {
+        ctx.fillStyle = shade > 0.62 ? COLORS.rockDeep : COLORS.rock;
+        ctx.fillRect(left, top, cell, cell);
+
+        // Only rock with open floor above it gets a lit face, which is what
+        // gives the rooms an edge instead of a flat silhouette.
+        if (y > 0 && !state.blocked.has((y - 1) * cols + x)) {
+          ctx.fillStyle = COLORS.rockEdge;
+          ctx.fillRect(left, top, cell, 2);
+        }
+      } else {
+        ctx.fillStyle = shade > 0.7 ? COLORS.floorAlt : COLORS.floor;
+        ctx.fillRect(left, top, cell, cell);
+      }
+    }
+  }
+
+  // Flagstone seams, on the floor only. Running the grid across the rock as
+  // well is what made the first version read as graph paper with blobs on it.
+  ctx.strokeStyle = COLORS.floorGrid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = bounds.top; y <= bounds.bottom; y += 1) {
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      if (state.blocked.has(y * cols + x)) continue;
+      if (x + 1 < cols && !state.blocked.has(y * cols + x + 1)) {
+        ctx.moveTo((x + 1) * cell + 0.5, y * cell);
+        ctx.lineTo((x + 1) * cell + 0.5, (y + 1) * cell);
+      }
+      if (!state.blocked.has((y + 1) * cols + x)) {
+        ctx.moveTo(x * cell, (y + 1) * cell + 0.5);
+        ctx.lineTo((x + 1) * cell, (y + 1) * cell + 0.5);
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+/**
+ * Enemies. Every phase they can be in looks different on purpose: a dormant
+ * sleeper has to read as scenery you may walk around, a waking one as a threat
+ * that has not started yet, and a fading one as a threat that is nearly over.
+ */
+function drawEnemies(ctx, state, cell, time) {
+  for (const enemy of state.enemies) {
+    const dormant = enemy.phase === 'dormant';
+    const waking = enemy.phase === 'waking';
+    const feeding = enemy.phase === 'feeding';
+    const fading = enemy.phase === 'hunting' && enemy.msLeft <= state.config.enemyFadeMs;
+
+    const base = enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler;
+    const color = dormant ? COLORS.sleeperDormant : base;
+
+    ctx.save();
+    if (dormant) {
+      ctx.globalAlpha = 0.72 + Math.sin(time / 700) * 0.08; // a slow, sleeping breath
+    } else if (waking) {
+      ctx.globalAlpha = 0.45 + Math.abs(Math.sin(time / 130)) * 0.55; // surfacing
+    } else if (fading) {
+      ctx.globalAlpha = Math.max(0.12, enemy.msLeft / state.config.enemyFadeMs) * 0.9;
+    }
+
+    const inset = cell * 0.14;
+    const size = cell - inset * 2;
+
+    for (let i = enemy.body.length - 1; i >= 0; i -= 1) {
+      const seg = enemy.body[i];
+      const taper = 1 - (i / enemy.body.length) * 0.45;
+      const pad = (size * (1 - taper)) / 2;
+      ctx.fillStyle = i === 0 && !dormant ? COLORS.crawlerHead : color;
+      ctx.beginPath();
+      ctx.arc(
+        seg.x * cell + cell / 2,
+        seg.y * cell + cell / 2,
+        (size / 2) * taper + pad * 0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+
+    const head = enemy.body[0];
+    const hx = head.x * cell + cell / 2;
+    const hy = head.y * cell + cell / 2;
+
+    if (dormant) {
+      // A coil mark, so a sleeping worm reads as asleep rather than as dead.
+      ctx.strokeStyle = COLORS.sleeper;
+      ctx.globalAlpha *= 0.7;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * 0.22, 0, Math.PI * 1.6);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = COLORS.background;
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(hx + sign * cell * 0.13, hy - cell * 0.06, cell * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (waking) {
+      // An expanding ring: the tell that something is about to start moving.
+      const pulse = (time % 900) / 900;
+      ctx.strokeStyle = base;
+      ctx.globalAlpha = (1 - pulse) * 0.7;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * (0.3 + pulse * 0.9), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (feeding) {
+      // Chewing: a head that swells and shrinks on the spot. It has to be
+      // obvious that this one has stopped, because that is your way out.
+      const chew = 0.34 + Math.abs(Math.sin(time / 110)) * 0.16;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = base;
+      ctx.beginPath();
+      ctx.arc(hx, hy, cell * chew, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = COLORS.background;
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(hx + sign * cell * 0.13, hy - cell * 0.06, cell * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+/** What is left of a severed tail, dissolving where it was bitten off. */
+function drawScraps(ctx, state, cell) {
+  for (const scrap of state.scraps) {
+    const progress = scrap.msLeft / state.config.scrapFadeMs;
+    ctx.save();
+    ctx.globalAlpha = progress * 0.7;
+    ctx.fillStyle = COLORS.snake;
+    const size = cell * 0.7 * progress;
+    ctx.beginPath();
+    ctx.arc(scrap.x * cell + cell / 2, scrap.y * cell + cell / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/** Shards: slowly spinning diamonds, the thing a floor is actually about. */
+function drawShards(ctx, state, cell, time) {
+  for (const shard of state.shards) {
+    const cx = shard.x * cell + cell / 2;
+    const cy = shard.y * cell + cell / 2;
+    const r = cell * (0.34 + Math.sin(time / 320 + shard.x + shard.y) * 0.035);
+
+    ctx.save();
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 0.72);
+    glow.addColorStop(0, `${COLORS.shard}55`);
+    glow.addColorStop(1, `${COLORS.shard}00`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - cell, cy - cell, cell * 2, cell * 2);
+
+    // Rotating about the tile centre, undone by the restore below, so the
+    // canvas transform the caller set up (devicePixelRatio) survives.
+    ctx.translate(cx, cy);
+    ctx.rotate(time / 900 + shard.x);
+
+    ctx.fillStyle = COLORS.shard;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.62, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r * 0.62, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // A facet highlight, so the diamond has a front face while it turns.
+    ctx.fillStyle = COLORS.title;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.62, 0);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * The way down. Locked it is inert grey; with the last shard taken it turns
+ * green and starts pulling its rings inward, which is the only prompt the
+ * player gets that the floor is done.
+ */
+function drawPortal(ctx, state, cell, time) {
+  const { portal, portalOpen } = state;
+  const cx = portal.x * cell + cell / 2;
+  const cy = portal.y * cell + cell / 2;
+  const color = portalOpen ? COLORS.portalOpen : COLORS.portalLocked;
+
+  ctx.save();
+  if (portalOpen) {
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 1.1);
+    glow.addColorStop(0, `${color}55`);
+    glow.addColorStop(1, `${color}00`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - cell * 1.2, cy - cell * 1.2, cell * 2.4, cell * 2.4);
+  }
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  for (let ring = 0; ring < 3; ring += 1) {
+    // Open, the rings drift inward; locked, they just sit there.
+    const phase = portalOpen ? ((time / 1100 + ring / 3) % 1) : ring / 3;
+    const r = cell * (0.12 + (1 - phase) * 0.34);
+    ctx.globalAlpha = portalOpen ? 0.35 + phase * 0.5 : 0.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (!portalOpen) {
+    // A keyhole bar, to say "locked" without a word of UI.
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx - cell * 0.2, cy);
+    ctx.lineTo(cx + cell * 0.2, cy);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawFood(ctx, food, cell) {
@@ -228,6 +498,7 @@ function drawMagnetPull(ctx, state, cell) {
 function drawSnake(ctx, state, cell, time) {
   const { snake } = state;
   const ghost = isEffectActive(state, 'ghost');
+  const immune = state.invulnerable > 0;
   const slow = isEffectActive(state, 'slow');
   const inset = cell * 0.08;
   const size = cell - inset * 2;
@@ -248,6 +519,19 @@ function drawSnake(ctx, state, cell, time) {
     ctx.globalAlpha = ghost ? base * 0.42 : base;
     ctx.fillStyle = i === 0 ? headColor : bodyColor;
     fillCell(ctx, seg.x * cell + inset, seg.y * cell + inset, size, radius);
+  }
+
+  if (immune && !ghost) {
+    // The window after a bite. Flashing the whole snake rather than the head:
+    // what is protected is all of it, and that is the thing worth knowing.
+    ctx.globalAlpha = 0.35 + Math.abs(Math.sin(time / 90)) * 0.5;
+    ctx.strokeStyle = COLORS.title;
+    ctx.lineWidth = 2;
+    for (const seg of snake) {
+      ctx.beginPath();
+      ctx.arc(seg.x * cell + cell / 2, seg.y * cell + cell / 2, cell * 0.46, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   if (ghost) {
@@ -305,17 +589,62 @@ function drawTimeBar(ctx, state, width) {
   ctx.restore();
 }
 
+function arrivalSubtitle(state) {
+  switch (state.arrival) {
+    case 'retry':
+      return state.lives === 1
+        ? 'one life left — the floor starts over'
+        : `${state.lives} lives left — the floor starts over`;
+    case 'life-earned':
+      return 'five floors down — a life back';
+    default:
+      return 'take a breath — the floor is new';
+  }
+}
+
+/**
+ * The depth announcement on arrival. It fades out over the same window as the
+ * landing grace, so the banner *is* the explanation for why the snake is
+ * crawling — the moment it clears, you are back at full pace.
+ */
+function drawArrivalBanner(ctx, state, width, height) {
+  if (state.grace <= 0 || state.status !== 'running') return;
+
+  const progress = state.grace / state.config.graceMs;
+  const retry = state.arrival === 'retry';
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, progress * 1.6);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = retry ? COLORS.crawler : COLORS.title;
+  ctx.font = '600 30px system-ui, sans-serif';
+  ctx.fillText(retry ? 'LIFE LOST' : `DEPTH ${state.depth}`, width / 2, height / 2 - 12);
+
+  ctx.fillStyle = COLORS.subtitle;
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillText(arrivalSubtitle(state), width / 2, height / 2 + 16);
+  ctx.restore();
+}
+
 function overlayText(state) {
   const timed = state.config.mode === 'time';
+  const adventure = state.config.mode === 'adventure';
   switch (state.status) {
     case 'ready':
+      if (adventure) {
+        return ['THE DESCENT', 'Take every shard to open the way down'];
+      }
       return timed
         ? ['TIME ATTACK', `${Math.round(state.config.timeLimit / 1000)} seconds — press Space or an arrow key`]
         : ['SNAKE', 'Press Space or an arrow key to start'];
     case 'paused':
       return ['PAUSED', 'Space or P to resume'];
     case 'over':
-      return ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
+      return adventure
+        ? ['OUT OF LIVES', `Depth ${state.depth} · score ${state.score} — Enter or R to dive again`]
+        : ['GAME OVER', `Score ${state.score} — Enter or R to play again`];
     case 'timeup':
       return ["TIME'S UP", `Score ${state.score} — Enter or R to play again`];
     case 'won':
@@ -344,23 +673,173 @@ function drawOverlay(ctx, state, width, height) {
   ctx.fillText(lines[1], width / 2, height / 2 + 22);
 }
 
-export function render(ctx, state, time = 0) {
+/**
+ * Chevrons pinned to the edge of the window, pointing at the shards and the
+ * portal while they are off screen. The minimap says where things are on the
+ * floor; these say which way to turn without looking away from the snake.
+ */
+function drawOffscreenMarkers(ctx, state, camera, view, cell) {
+  const width = view.cols * cell;
+  const height = view.rows * cell;
+  const margin = 11;
+
+  const targets = state.shards.map((shard) => ({ cell: shard, color: COLORS.shard }));
+  if (state.portal) {
+    targets.push({
+      cell: state.portal,
+      color: state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked,
+    });
+  }
+  // Only enemies that are actually hunting: a chevron for a sleeper you have
+  // not woken would be a warning about nothing.
+  for (const enemy of state.enemies) {
+    if (enemy.phase !== 'hunting') continue;
+    targets.push({
+      cell: enemy.body[0],
+      color: enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler,
+    });
+  }
+
+  for (const target of targets) {
+    const x = (target.cell.x - camera.x) * cell + cell / 2;
+    const y = (target.cell.y - camera.y) * cell + cell / 2;
+    if (x >= 0 && y >= 0 && x <= width && y <= height) continue;
+
+    const px = Math.min(Math.max(x, margin), width - margin);
+    const py = Math.min(Math.max(y, margin), height - margin);
+    const angle = Math.atan2(y - py, x - px);
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = target.color;
+    ctx.beginPath();
+    ctx.moveTo(7, 0);
+    ctx.lineTo(-4, 5);
+    ctx.lineTo(-4, -5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/**
+ * A corner map of the whole floor. With a world four times the size of the
+ * window, the player needs to see the shape of the place they are in — without
+ * it, exploring a scrolling dungeon is guesswork.
+ */
+function drawMinimap(ctx, state, camera, view, cell) {
+  const { cols, rows } = state.config;
+  const scale = Math.max(1, Math.round(110 / cols));
+  const mapW = cols * scale;
+  const mapH = rows * scale;
+  const pad = 5;
+  const left = view.cols * cell - mapW - pad * 2 - 8;
+  const top = view.rows * cell - mapH - pad * 2 - 8;
+
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  ctx.fillStyle = 'rgba(6, 9, 14, 0.9)';
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(left + 0.5, top + 0.5, mapW + pad * 2, mapH + pad * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  const ox = left + pad;
+  const oy = top + pad;
+
+  // Open floor only: drawing the rock as well would just fill the panel in.
+  ctx.fillStyle = '#243141';
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      if (state.blocked.has(y * cols + x)) continue;
+      ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+    }
+  }
+
+  const dot = (cellPos, color, size = scale + 1) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + cellPos.x * scale - (size - scale) / 2, oy + cellPos.y * scale - (size - scale) / 2, size, size);
+  };
+
+  for (const enemy of state.enemies) {
+    const color = enemy.phase === 'dormant'
+      ? COLORS.sleeperDormant
+      : (enemy.kind === 'sleeper' ? COLORS.sleeper : COLORS.crawler);
+    for (const seg of enemy.body) dot(seg, color, scale);
+    dot(enemy.body[0], color, scale + 2);
+  }
+  for (const shard of state.shards) dot(shard, COLORS.shard, scale + 2);
+  if (state.portal) dot(state.portal, state.portalOpen ? COLORS.portalOpen : COLORS.portalLocked, scale + 2);
+  for (const seg of state.snake) dot(seg, COLORS.snake, scale);
+  dot(state.snake[0], COLORS.title, scale + 2);
+
+  // The window itself, so the map and the board can be read against each other.
+  ctx.strokeStyle = 'rgba(226, 232, 240, 0.5)';
+  ctx.strokeRect(
+    ox + camera.x * scale + 0.5,
+    oy + camera.y * scale + 0.5,
+    view.cols * scale,
+    view.rows * scale,
+  );
+  ctx.restore();
+}
+
+export function render(ctx, state, time = 0, camera = { x: 0, y: 0 }) {
   const { cols, rows, cell } = state.config;
-  const width = cols * cell;
-  const height = rows * cell;
+  const view = viewSize(state.config);
+  const width = view.cols * cell;
+  const height = view.rows * cell;
+  const scrolls = view.cols < cols || view.rows < rows;
 
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
 
-  drawGrid(ctx, cols, rows, cell);
+  // Whole pixels: a camera parked on a fraction of a tile blurs every wall edge
+  // and makes the 1px floor seams shimmer as it moves.
+  const offsetX = Math.round(camera.x * cell);
+  const offsetY = Math.round(camera.y * cell);
+
+  ctx.save();
+  ctx.translate(-offsetX, -offsetY);
+
+  const bounds = {
+    left: Math.max(0, Math.floor(camera.x) - 1),
+    right: Math.min(cols - 1, Math.ceil(camera.x + view.cols) + 1),
+    top: Math.max(0, Math.floor(camera.y) - 1),
+    bottom: Math.min(rows - 1, Math.ceil(camera.y + view.rows) + 1),
+  };
+
+  // Adventure paints its own floor, seams included, so the plain grid would
+  // only show through the rock.
+  if (state.blocked.size > 0) drawDungeon(ctx, state, cell, bounds);
+  else drawGrid(ctx, cols, rows, cell);
+  if (state.portal) drawPortal(ctx, state, cell, time);
+  drawShards(ctx, state, cell, time);
   if (isEffectActive(state, 'magnet')) drawMagnetPull(ctx, state, cell);
   if (state.powerUp) drawPowerUp(ctx, state.powerUp, cell, time);
   for (const crumb of state.bonusFood) {
     drawBonusFood(ctx, crumb, cell, effectMs(state, 'feast'), time);
   }
   if (state.food) drawFood(ctx, state.food, cell);
+  drawScraps(ctx, state, cell);
+  drawEnemies(ctx, state, cell, time);
   drawSnake(ctx, state, cell, time);
+
+  ctx.restore();
+
+  // Everything from here is pinned to the window, not to the world.
+  if (scrolls) {
+    // Markers first: the minimap is an opaque panel and should cover a chevron
+    // that happens to land under it, not the other way round.
+    drawOffscreenMarkers(ctx, state, camera, view, cell);
+    drawMinimap(ctx, state, camera, view, cell);
+  }
   drawEffectFrames(ctx, state, width, height);
   drawTimeBar(ctx, state, width);
+  drawArrivalBanner(ctx, state, width, height);
   drawOverlay(ctx, state, width, height);
 }

@@ -213,6 +213,37 @@ kbd {
 .icon.magnet { fill: #fbbf24; }
 .icon.feast { fill: #f472b6; }
 
+.hint {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #67e8f9;
+  border-radius: 7px;
+  background: var(--panel);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Lives. Tabular figures do not apply to hearts, so the width is left to shrink
+   as they are spent — the label keeps the column anchored. */
+.hearts {
+  color: #fb7185;
+  letter-spacing: 0.06em;
+}
+
+.hearts.last {
+  animation: heart-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes heart-pulse {
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hearts.last { animation: none; }
+}
+
 /* The time attack clock, ticking red over the last ten seconds. */
 #time.urgent {
   color: #f87171;
