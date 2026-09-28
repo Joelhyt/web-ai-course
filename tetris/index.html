@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tetris</title>
+    <link rel="stylesheet" href="../shared/theme.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game">
+      <a class="back" href="../">&larr; All games</a>
+
+      <header class="hud">
+        <h1>Tetris</h1>
+        <dl class="stats">
+          <div class="stat" id="score-stat">
+            <dt>Score</dt>
+            <dd id="score">0</dd>
+          </div>
+          <div class="stat" id="time-stat" hidden>
+            <dt>Time</dt>
+            <dd id="time">0:00.00</dd>
+          </div>
+          <div class="stat">
+            <dt>Best</dt>
+            <dd id="best">0</dd>
+          </div>
+          <div class="stat" id="level-stat">
+            <dt>Level</dt>
+            <dd id="level">1</dd>
+          </div>
+          <div class="stat">
+            <dt>Lines</dt>
+            <dd id="lines">0/150</dd>
+          </div>
+        </dl>
+      </header>
+
+      <canvas id="board" aria-label="Tetris playfield"></canvas>
+      <p id="announcer" class="visually-hidden" aria-live="polite"></p>
+
+      <footer class="controls">
+        <label for="mode">
+          Mode
+          <select id="mode">
+            <option value="marathon">Marathon — 150 lines, speeding up every ten</option>
+            <option value="sprint">Sprint — 40 lines against the clock</option>
+          </select>
+        </label>
+        <p class="keys">
+          <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> move</span> ·
+          <span><kbd>&darr;</kbd> soft drop</span> ·
+          <span><kbd>Space</kbd> hard drop</span> ·
+          <span><kbd>&uarr;</kbd>/<kbd>X</kbd> rotate right</span> ·
+          <span><kbd>Z</kbd> rotate left</span> ·
+          <span><kbd>C</kbd>/<kbd>Shift</kbd> hold</span> ·
+          <span><kbd>P</kbd>/<kbd>Esc</kbd> pause</span> ·
+          <span><kbd>R</kbd> retry</span>
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

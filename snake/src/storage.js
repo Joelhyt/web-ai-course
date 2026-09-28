@@ -4,12 +4,14 @@
 
 // Each mode keeps its own best — a 60 second sprint and an open-ended round are
 // not comparable scores. Classic keeps the original key so existing bests survive.
+// The game picker on the site's front page reads these keys as well.
 const KEYS = {
   classic: 'snake.highScore',
   time: 'snake.highScore.time',
+  adventure: 'snake.highScore.adventure',
 };
 
-const fallback = { classic: 0, time: 0 };
+const fallback = { classic: 0, time: 0, adventure: 0 };
 
 export function loadHighScore(mode = 'classic') {
   const key = KEYS[mode] ?? KEYS.classic;

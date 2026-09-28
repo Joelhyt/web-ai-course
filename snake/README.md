@@ -4,11 +4,10 @@ A browser clone of classic Snake. Vanilla JavaScript and HTML5 Canvas, **zero de
 
 ## Running it
 
-ES modules are blocked over `file://` by browser CORS rules, so the page needs a static server:
+ES modules are blocked over `file://` by browser CORS rules, so the page needs a static server. Serve the **repository root**, not this folder — the page shares `../shared/theme.css` with the other games:
 
 ```bash
-cd snake
-python3 -m http.server 8000   # then open http://localhost:8000
+python3 -m http.server 8000   # from the repo root, then open http://localhost:8000/snake/
 ```
 
 `npx serve` works just as well if you prefer Node.
@@ -115,7 +114,7 @@ cd snake && node --test
 
 ```
 index.html      canvas, HUD, power-up legend, mode and wall controls
-styles.css      layout and theme
+styles.css      layout (colour tokens and base styles are in ../shared/theme.css)
 src/
   config.js     grid size, timing, colours, power-up table and mode presets
   game.js       pure rules: createGame, tick, advanceClock, queueDirection, spawns
