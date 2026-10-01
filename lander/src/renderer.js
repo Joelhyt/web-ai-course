@@ -39,9 +39,36 @@ export function resizeCanvas(canvas, ctx) {
   return layout;
 }
 
+// The world is drawn through a view: the layout's size, with the camera's
+// centre and the layout's scale times the camera's zoom. At zoom 1, centred on
+// the middle of the world, that is the whole world, edge to edge.
+function viewFor(layout, camera) {
+  return {
+    width: layout.width,
+    height: layout.height,
+    scale: layout.scale * camera.zoom,
+    cx: camera.cx,
+    cy: camera.cy,
+  };
+}
+
 // World metres (y up) → canvas pixels (y down).
-const sx = (layout, x) => x * layout.scale;
-const sy = (layout, y) => (WORLD.height - y) * layout.scale;
+const sx = (view, x) => (x - view.cx) * view.scale + view.width / 2;
+const sy = (view, y) => (view.cy - y) * view.scale + view.height / 2;
+
+/**
+ * The world-width offsets at which the world must be drawn to fill the view.
+ * Just [0] for the whole world; near a side, zoomed in, the neighbouring copy
+ * as well, which is what makes the wrap seamless.
+ */
+function shiftsInView(view) {
+  const half = view.width / 2 / view.scale;
+  const first = Math.floor((view.cx - half) / WORLD.width);
+  const last = Math.floor((view.cx + half - 1e-9) / WORLD.width);
+  const shifts = [];
+  for (let k = first; k <= last; k += 1) shifts.push(k * WORLD.width);
+  return shifts;
+}
 
 // ---------------------------------------------------------------------------
 // Scenery
@@ -57,54 +84,64 @@ const STARS = (() => {
   }));
 })();
 
-function drawStars(ctx, state, layout) {
+function drawStars(ctx, state, view) {
   ctx.fillStyle = COLORS.star;
-  for (const star of STARS) {
-    if (star.y < groundHeight(state.terrain, star.x) + 4) continue;
-    const size = star.big ? 2 : 1;
-    ctx.fillRect(Math.round(sx(layout, star.x)), Math.round(sy(layout, star.y)), size, size);
+  for (const shift of shiftsInView(view)) {
+    for (const star of STARS) {
+      if (star.y < groundHeight(state.terrain, star.x) + 4) continue;
+      const size = star.big ? 2 : 1;
+      ctx.fillRect(Math.round(sx(view, star.x + shift)), Math.round(sy(view, star.y)), size, size);
+    }
   }
 }
 
-function groundPath(ctx, state, layout) {
+/** The ground's outline, as a subpath of the current path, `shift` metres over. */
+function groundLine(ctx, state, view, shift) {
   const { heights, step } = state.terrain;
-  ctx.beginPath();
   heights.forEach((h, i) => {
-    if (i === 0) ctx.moveTo(sx(layout, 0), sy(layout, h));
-    else ctx.lineTo(sx(layout, i * step), sy(layout, h));
+    if (i === 0) ctx.moveTo(sx(view, shift), sy(view, h));
+    else ctx.lineTo(sx(view, i * step + shift), sy(view, h));
   });
 }
 
-function drawTerrain(ctx, state, layout) {
-  // The ends meet at one height, so the ground runs on seamlessly across the
-  // wrap without any join.
-  groundPath(ctx, state, layout);
-  ctx.lineTo(layout.width, layout.height);
-  ctx.lineTo(0, layout.height);
-  ctx.closePath();
+function drawTerrain(ctx, state, view) {
+  const shifts = shiftsInView(view);
+  // Every copy in one path, filled and stroked once: the ends meet at one
+  // height, and copies drawn separately would leave a hairline at the seam.
+  ctx.beginPath();
+  for (const shift of shifts) {
+    groundLine(ctx, state, view, shift);
+    ctx.lineTo(sx(view, WORLD.width + shift), view.height);
+    ctx.lineTo(sx(view, shift), view.height);
+    ctx.closePath();
+  }
   ctx.fillStyle = COLORS.ground;
   ctx.fill();
 
-  groundPath(ctx, state, layout);
+  ctx.beginPath();
+  for (const shift of shifts) groundLine(ctx, state, view, shift);
   ctx.strokeStyle = COLORS.terrain;
   ctx.lineWidth = 1.5;
   ctx.lineJoin = 'round';
   ctx.stroke();
 
-  // Pads: bright and thick, with their multiplier in the ground beneath.
-  ctx.lineCap = 'round';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.font = `700 ${Math.max(11, Math.round(layout.scale * 7))}px system-ui, sans-serif`;
-  for (const pad of state.terrain.pads) {
-    ctx.strokeStyle = COLORS.pad;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(sx(layout, pad.x0), sy(layout, pad.height));
-    ctx.lineTo(sx(layout, pad.x1), sy(layout, pad.height));
-    ctx.stroke();
-    ctx.fillStyle = COLORS.padLabel;
-    ctx.fillText(`${pad.multiplier}×`, sx(layout, (pad.x0 + pad.x1) / 2), sy(layout, pad.height) + 6);
+  for (const shift of shifts) {
+    // Pads: bright and thick, with their multiplier in the ground beneath.
+    ctx.lineCap = 'round';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 ${Math.min(16, Math.max(11, Math.round(view.scale * 7)))}px system-ui, sans-serif`;
+    for (const pad of state.terrain.pads) {
+      ctx.strokeStyle = COLORS.pad;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx(view, pad.x0 + shift), sy(view, pad.height));
+      ctx.lineTo(sx(view, pad.x1 + shift), sy(view, pad.height));
+      ctx.stroke();
+      ctx.fillStyle = COLORS.padLabel;
+      const mid = (pad.x0 + pad.x1) / 2 + shift;
+      ctx.fillText(`${pad.multiplier}×`, sx(view, mid), sy(view, pad.height) + 6);
+    }
   }
 }
 
@@ -152,12 +189,12 @@ function landerPath(ctx) {
   ctx.lineTo(1, -1);
 }
 
-function drawLanderAt(ctx, lander, layout, x, y, now, showFlame) {
+function drawLanderAt(ctx, lander, view, x, y, now, showFlame) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate((lander.angle * Math.PI) / 180);
-  ctx.scale(layout.scale, -layout.scale);
-  ctx.lineWidth = 1.5 / layout.scale;
+  ctx.scale(view.scale, -view.scale);
+  ctx.lineWidth = 1.5 / view.scale;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -192,38 +229,38 @@ function drawLanderAt(ctx, lander, layout, x, y, now, showFlame) {
  * Draws at the lander's position and a world-width to either side, so near a
  * side it is already half in view at the other.
  */
-function eachWrap(lander, layout, draw) {
+function eachWrap(lander, view, draw) {
   for (const shift of [0, -WORLD.width, WORLD.width]) {
     const x = lander.x + shift;
     if (shift && (x < -15 || x > WORLD.width + 15)) continue;
-    draw(sx(layout, x), sy(layout, lander.y));
+    draw(sx(view, x), sy(view, lander.y));
   }
 }
 
-function drawLander(ctx, state, layout, now) {
+function drawLander(ctx, state, view, now) {
   if (state.status === 'crashed') return;
   const showFlame = state.lander.thrusting && state.status === 'flying';
-  eachWrap(state.lander, layout, (x, y) => drawLanderAt(ctx, state.lander, layout, x, y, now, showFlame));
+  eachWrap(state.lander, view, (x, y) => drawLanderAt(ctx, state.lander, view, x, y, now, showFlame));
 }
 
 // When a crash was first drawn, keyed by its result. Debris flies on the wall
 // clock, so it plays out the same however long the result shows.
 const firstSeen = new WeakMap();
 
-function drawDebris(ctx, state, layout, now) {
+function drawDebris(ctx, state, view, now) {
   if (state.status !== 'crashed' || !state.result) return;
   if (!firstSeen.has(state.result)) firstSeen.set(state.result, now);
   const t = (now - firstSeen.get(state.result)) / 1000;
   const fade = Math.max(0, 1 - t / 2);
   if (fade <= 0) return;
 
-  eachWrap(state.lander, layout, (cx, cy) => {
+  eachWrap(state.lander, view, (cx, cy) => {
     // A brief flash, then pieces of the outline thrown out and falling back.
     if (t < 0.35) {
       ctx.globalAlpha = 1 - t / 0.35;
       ctx.fillStyle = COLORS.flameCore;
       ctx.beginPath();
-      ctx.arc(cx, cy, layout.scale * (4 + 30 * t), 0, Math.PI * 2);
+      ctx.arc(cx, cy, view.scale * (4 + 30 * t), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = fade;
@@ -235,10 +272,10 @@ function drawDebris(ctx, state, layout, now) {
       const speed = 14 + (i % 3) * 7; // m/s
       const vx = Math.cos(a) * speed;
       const vy = Math.abs(Math.sin(a)) * speed + 6; // thrown up, mostly
-      const x = cx + vx * t * layout.scale;
-      const y = cy - (vy * t - 0.5 * 9 * t * t) * layout.scale;
+      const x = cx + vx * t * view.scale;
+      const y = cy - (vy * t - 0.5 * 9 * t * t) * view.scale;
       const spin = t * (3 + i);
-      const half = layout.scale * (1.5 + (i % 4) * 0.6);
+      const half = view.scale * (1.5 + (i % 4) * 0.6);
       ctx.beginPath();
       ctx.moveTo(x - Math.cos(spin) * half, y - Math.sin(spin) * half);
       ctx.lineTo(x + Math.cos(spin) * half, y + Math.sin(spin) * half);
@@ -370,13 +407,19 @@ function drawOverlay(ctx, state, layout) {
 
 // ---------------------------------------------------------------------------
 
-export function render(ctx, state, layout, now) {
+const WHOLE_WORLD = Object.freeze({ zoom: 1, cx: WORLD.width / 2, cy: WORLD.height / 2 });
+
+/** `camera` (see camera.js) is optional; without one the whole world is shown. */
+export function render(ctx, state, layout, now, camera = WHOLE_WORLD) {
+  const view = viewFor(layout, camera);
   ctx.fillStyle = COLORS.space;
   ctx.fillRect(0, 0, layout.width, layout.height);
-  drawStars(ctx, state, layout);
-  drawTerrain(ctx, state, layout);
-  drawLander(ctx, state, layout, now);
-  drawDebris(ctx, state, layout, now);
+  // The world through the camera…
+  drawStars(ctx, state, view);
+  drawTerrain(ctx, state, view);
+  drawLander(ctx, state, view, now);
+  drawDebris(ctx, state, view, now);
+  // …and the readouts and panels fixed on the screen.
   drawReadouts(ctx, state, layout, now);
   drawOverlay(ctx, state, layout);
 }

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PHYSICS, TICK_MS, WORLD } from './config.js';
+import { LIMITS, PHYSICS, TICK_MS, WORLD } from './config.js';
 import { altitude, contact, judge, landerPoints, stepLander, wrapLander } from './physics.js';
 import { flatTerrain, landerAbove } from './testing.js';
 
@@ -37,7 +37,7 @@ test('thrust pushes along the lander’s axis', () => {
   assert.ok(close(sideways.vy, -PHYSICS.gravity, 1e-9));
 });
 
-test('the lander turns at a fixed rate and no further than sideways', () => {
+test('the lander turns at a fixed rate, up to its tilt limit', () => {
   const lander = { x: 50, y: 100, vx: 0, vy: 0, angle: 0 };
   fly(lander, { right: true }, 0.5);
   assert.ok(close(lander.angle, PHYSICS.rotationSpeed * 0.5, 1e-6));
@@ -110,15 +110,19 @@ test('a touchdown is judged on speed, tilt and where the feet are', () => {
   const terrain = flatTerrain(20);
   const feet = { feet: [true, true], body: false };
   const on = (props) => judge(terrain, landerAbove(20, 0, props), feet).outcome;
+  const { good, hard } = LIMITS;
+  // Halfway between the good and the hard limits, and a little past the hard one.
+  const mid = (key) => (good[key] + hard[key]) / 2;
+  const past = (key) => hard[key] + 0.5;
 
-  assert.equal(on({ vy: -1.9 }), 'good');
-  assert.equal(on({ vy: -1.9, vx: 1.4, angle: -7 }), 'good');
-  assert.equal(on({ vy: -3.5 }), 'hard');
-  assert.equal(on({ vy: -1, vx: 2 }), 'hard');
-  assert.equal(on({ vy: -1, angle: 10 }), 'hard');
-  assert.equal(on({ vy: -4.5 }), 'crash');
-  assert.equal(on({ vy: -1, vx: 3 }), 'crash');
-  assert.equal(on({ vy: -1, angle: 15 }), 'crash');
+  assert.equal(on({ vy: -good.vertical }), 'good');
+  assert.equal(on({ vy: -good.vertical, vx: good.horizontal, angle: -good.tilt }), 'good');
+  assert.equal(on({ vy: -mid('vertical') }), 'hard');
+  assert.equal(on({ vy: -1, vx: mid('horizontal') }), 'hard');
+  assert.equal(on({ vy: -1, angle: mid('tilt') }), 'hard');
+  assert.equal(on({ vy: -past('vertical') }), 'crash');
+  assert.equal(on({ vy: -1, vx: past('horizontal') }), 'crash');
+  assert.equal(on({ vy: -1, angle: past('tilt') }), 'crash');
   // Off the pad, or one foot over its edge.
   assert.equal(on({ vy: -1, x: 60 }), 'crash');
   assert.equal(on({ vy: -1, x: 137 }), 'crash');

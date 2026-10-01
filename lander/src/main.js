@@ -3,8 +3,10 @@
 
 import { createGame, start, advanceClock, setControls, togglePause } from './game.js';
 import { render, resizeCanvas } from './renderer.js';
+import { createCamera, updateCamera } from './camera.js';
 import { attachKeyboard } from './input.js';
 import { loadBest, saveBest } from './storage.js';
+import { FUEL, LIMITS } from './config.js';
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -16,9 +18,17 @@ const fuelEl = document.getElementById('fuel');
 const roundEl = document.getElementById('round');
 const announcerEl = document.getElementById('announcer');
 
+const { good } = LIMITS;
+document.getElementById('rules').textContent =
+  `Touch down on a pad slower than ${good.vertical} m/s down and ${good.horizontal} m/s across, ` +
+  `within ${good.tilt}° of upright. Fuel is your lives: a crash costs ${FUEL.crashPenalty}, ` +
+  `a clean landing gives ${FUEL.landingBonus} back.`;
+
 let state = createGame();
 let best = loadBest();
 let layout = resizeCanvas(canvas, ctx);
+// Zooms in near the ground. Presentation only: the rules never see it.
+const camera = createCamera();
 let lastFrame = performance.now();
 
 /**
@@ -102,11 +112,13 @@ function frame(now) {
   recordResult();
   announce();
   updateHud();
-  render(ctx, state, layout, now);
+  updateCamera(camera, state, delta);
+  render(ctx, state, layout, now, camera);
   requestAnimationFrame(frame);
 }
 
 // Draw the ready screen at once rather than waiting on the first frame.
 updateHud();
-render(ctx, state, layout, lastFrame);
+updateCamera(camera, state, 0);
+render(ctx, state, layout, lastFrame, camera);
 requestAnimationFrame(frame);

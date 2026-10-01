@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { advanceClock, createGame, setControls, start, togglePause } from './game.js';
-import { FUEL, ROUND, SCORING, TICK_MS, WORLD } from './config.js';
+import { FUEL, LIMITS, ROUND, SCORING, TICK_MS, WORLD } from './config.js';
 import { flatTerrain, landerAbove, seeded } from './testing.js';
 
 function run(state, ticks) {
@@ -27,6 +27,12 @@ function approach(lander, settings = {}) {
 }
 
 const touchedDown = (state) => state.status !== 'flying';
+
+// Descent speeds that land each way, whatever the limits are tuned to. The
+// lander starts 0.1 m up, so it gains a little speed before touching.
+const GOOD = -LIMITS.good.vertical * 0.75;
+const HARD = -(LIMITS.good.vertical + LIMITS.hard.vertical) / 2;
+const CRASH = -(LIMITS.hard.vertical + 2);
 
 test('a game waits on the ready screen, then flies', () => {
   const state = createGame({}, seeded(1));
@@ -52,7 +58,7 @@ test('each round starts high up near a side, drifting toward the other', () => {
 });
 
 test('a good landing scores 50 × the pad plus the fuel bonus, and gives fuel back', () => {
-  const state = approach({ vy: -1.5 });
+  const state = approach({ vy: GOOD });
   runUntil(state, () => touchedDown(state));
   assert.equal(state.status, 'landed');
   assert.equal(state.result.outcome, 'good');
@@ -65,7 +71,7 @@ test('a good landing scores 50 × the pad plus the fuel bonus, and gives fuel ba
 });
 
 test('a hard landing scores 15 × the pad and no fuel', () => {
-  const state = approach({ vy: -3.2 });
+  const state = approach({ vy: HARD });
   runUntil(state, () => touchedDown(state));
   assert.equal(state.result.outcome, 'hard');
   assert.equal(state.score, SCORING.hard * 2);
@@ -73,7 +79,7 @@ test('a hard landing scores 15 × the pad and no fuel', () => {
 });
 
 test('a crash scores 5 and costs 250 fuel', () => {
-  const state = approach({ vy: -6 });
+  const state = approach({ vy: CRASH });
   runUntil(state, () => touchedDown(state));
   assert.equal(state.status, 'crashed');
   assert.equal(state.score, SCORING.crash);
@@ -89,9 +95,9 @@ test('a gentle touchdown off the pad is still a crash', () => {
 test('thrust can bring a fast descent down to a landing', () => {
   const state = approach({ vy: -12 });
   state.lander.y += 60;
-  // A simple autopilot: burn whenever falling faster than 1.5 m/s.
+  // A simple autopilot: burn whenever falling faster than half the safe speed.
   runUntil(state, () => {
-    setControls(state, { thrust: state.lander.vy < -1.5 });
+    setControls(state, { thrust: state.lander.vy < -LIMITS.good.vertical / 2 });
     return touchedDown(state);
   });
   assert.equal(state.result.outcome, 'good');
@@ -99,7 +105,7 @@ test('thrust can bring a fast descent down to a landing', () => {
 });
 
 test('after the outcome shows, the next round starts on new terrain', () => {
-  const state = approach({ vy: -1.5 });
+  const state = approach({ vy: GOOD });
   runUntil(state, () => touchedDown(state));
   const terrain = state.terrain;
   advanceClock(state, 999);
@@ -112,7 +118,7 @@ test('after the outcome shows, the next round starts on new terrain', () => {
 });
 
 test('the game ends when a round finishes with no fuel left', () => {
-  const state = approach({ vy: -6 }, { fuel: 200 });
+  const state = approach({ vy: CRASH }, { fuel: 200 });
   runUntil(state, () => touchedDown(state));
   assert.equal(state.fuel, 0);
   advanceClock(state, 1000);
@@ -131,7 +137,7 @@ test('running dry in flight kills the engine but the round plays out', () => {
 });
 
 test('a good landing on an empty tank keeps the game going', () => {
-  const state = approach({ vy: -1.5 }, { fuel: 0 });
+  const state = approach({ vy: GOOD }, { fuel: 0 });
   runUntil(state, () => touchedDown(state));
   assert.equal(state.fuel, FUEL.landingBonus);
   advanceClock(state, 1000);

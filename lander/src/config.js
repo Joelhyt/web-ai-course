@@ -14,7 +14,7 @@ export const PHYSICS = Object.freeze({
   gravity: 1.62, // the Moon's, m/s²
   thrust: 4.5, // the main engine's acceleration, m/s², along the lander's axis
   rotationSpeed: 120, // °/s
-  maxTilt: 90, // ° either side of upright
+  maxTilt: 120, // ° either side of upright
   fuelBurn: 10, // fuel units per second of thrust
 });
 
@@ -24,11 +24,25 @@ export const FUEL = Object.freeze({
   landingBonus: 50, // a good landing gives this back
 });
 
-// A touchdown is judged on the speeds and tilt at the moment of contact. Speeds
-// in m/s, tilt in degrees either side of upright.
+// Landing limits: how fast and how tilted the lander may be at the moment of
+// touchdown. Speeds in m/s, tilt in degrees either side of upright. Within
+// `good` is a clean landing, within `hard` a hard one, and beyond it a crash.
+// The readouts turn green inside `good`, and the hint under the game reads
+// these too.
 export const LIMITS = Object.freeze({
-  good: Object.freeze({ vertical: 2, horizontal: 1.5, tilt: 8 }),
-  hard: Object.freeze({ vertical: 4, horizontal: 2.5, tilt: 12 }),
+  good: Object.freeze({ vertical: 3, horizontal: 2, tilt: 10 }),
+  hard: Object.freeze({ vertical: 5, horizontal: 3, tilt: 15 }),
+});
+
+// Close to the ground the view zooms in on the lander, as the arcade's does.
+// Two thresholds rather than one, so hovering around a single altitude does not
+// make the view flicker in and out.
+export const ZOOM = Object.freeze({
+  factor: 2.5, // how much closer the zoomed view is
+  inBelow: 40, // zoom in when the lowest foot is this close to the ground, m
+  outAbove: 55, // and back out once it is this far up again
+  smoothing: 0.18, // s for the view to close most of the way to where it should be
+  groundShare: 0.35, // in the zoomed view, the ground below the lander sits this far up from the bottom
 });
 
 export const SCORING = Object.freeze({
