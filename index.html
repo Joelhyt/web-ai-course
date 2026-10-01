@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arcade</title>
+    <link rel="stylesheet" href="shared/theme.css" />
+    <link rel="stylesheet" href="hub.css" />
+  </head>
+  <body>
+    <main class="hub">
+      <header>
+        <h1>Arcade</h1>
+        <p>Browser games in vanilla JavaScript and canvas. No dependencies, no build step.</p>
+      </header>
+
+      <ul class="games">
+        <li>
+          <a class="card" href="snake/" style="--card-accent: #4ade80">
+            <svg class="art" viewBox="0 0 120 72" aria-hidden="true">
+              <g fill="#4ade80">
+                <rect x="14" y="44" width="10" height="10" rx="2" />
+                <rect x="26" y="44" width="10" height="10" rx="2" />
+                <rect x="38" y="44" width="10" height="10" rx="2" />
+                <rect x="38" y="32" width="10" height="10" rx="2" />
+                <rect x="50" y="32" width="10" height="10" rx="2" />
+                <rect x="62" y="32" width="10" height="10" rx="2" />
+                <rect x="62" y="20" width="10" height="10" rx="2" />
+              </g>
+              <rect x="74" y="20" width="10" height="10" rx="2" fill="#bbf7d0" />
+              <circle cx="103" cy="25" r="5" fill="#f87171" />
+            </svg>
+            <h2>Snake</h2>
+            <p>Eat, grow, don't bite yourself. Power-ups, a 60-second sprint and a dungeon descent.</p>
+            <dl class="bests">
+              <div><dt>Classic</dt><dd data-best="snake.highScore">—</dd></div>
+              <div><dt>Time attack</dt><dd data-best="snake.highScore.time">—</dd></div>
+              <div><dt>Adventure</dt><dd data-best="snake.highScore.adventure">—</dd></div>
+            </dl>
+          </a>
+        </li>
+        <li>
+          <a class="card" href="tetris/" style="--card-accent: #c084fc">
+            <svg class="art" viewBox="0 0 120 72" aria-hidden="true">
+              <g fill="#c084fc">
+                <rect x="49" y="8" width="10" height="10" rx="2" />
+                <rect x="37" y="20" width="10" height="10" rx="2" />
+                <rect x="49" y="20" width="10" height="10" rx="2" />
+                <rect x="61" y="20" width="10" height="10" rx="2" />
+              </g>
+              <g fill="#22d3ee">
+                <rect x="13" y="56" width="10" height="10" rx="2" />
+                <rect x="13" y="44" width="10" height="10" rx="2" />
+                <rect x="13" y="32" width="10" height="10" rx="2" />
+                <rect x="13" y="20" width="10" height="10" rx="2" />
+              </g>
+              <g fill="#facc15">
+                <rect x="25" y="56" width="10" height="10" rx="2" />
+                <rect x="37" y="56" width="10" height="10" rx="2" />
+                <rect x="25" y="44" width="10" height="10" rx="2" />
+                <rect x="37" y="44" width="10" height="10" rx="2" />
+              </g>
+              <g fill="#fb923c">
+                <rect x="61" y="56" width="10" height="10" rx="2" />
+                <rect x="73" y="56" width="10" height="10" rx="2" />
+                <rect x="85" y="56" width="10" height="10" rx="2" />
+                <rect x="85" y="44" width="10" height="10" rx="2" />
+              </g>
+              <g fill="#f87171">
+                <rect x="97" y="32" width="10" height="10" rx="2" />
+                <rect x="97" y="44" width="10" height="10" rx="2" />
+                <rect x="109" y="44" width="10" height="10" rx="2" />
+                <rect x="109" y="56" width="10" height="10" rx="2" />
+              </g>
+            </svg>
+            <h2>Tetris</h2>
+            <p>Modern guideline rules: SRS kicks, 7-bag, hold, T-spins and back-to-back.</p>
+            <dl class="bests">
+              <div><dt>Marathon</dt><dd data-best="tetris.best.marathon">—</dd></div>
+              <div><dt>Sprint 40L</dt><dd data-best="tetris.best.sprint" data-format="time">—</dd></div>
+            </dl>
+          </a>
+        </li>
+      </ul>
+    </main>
+
+    <script type="module" src="hub.js"></script>
+  </body>
+</html>

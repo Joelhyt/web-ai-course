@@ -1,32 +1,5 @@
-:root {
-  --bg: #0b0f14;
-  --panel: #151b24;
-  --border: #232c38;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #4ade80;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-/* `display` on a class beats the hidden attribute's UA rule, and both the
-   effect chips and the time attack clock are shown by toggling `hidden`. */
-[hidden] {
-  display: none !important;
-}
-
-body {
-  margin: 0;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-}
+/* Snake's own layout. Tokens, the page background and <kbd> come from
+   ../shared/theme.css. */
 
 .game {
   display: flex;
@@ -116,20 +89,6 @@ select {
   font-size: 12px;
   line-height: 1.9;
   color: var(--muted);
-}
-
-kbd {
-  display: inline-block;
-  min-width: 20px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  background: var(--panel);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 11px;
-  text-align: center;
 }
 
 /* Active power-up chips. The list is empty until an effect is running, and the
