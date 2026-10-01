@@ -1,6 +1,6 @@
 // Fills in each game's personal bests on the picker. The keys are the ones the
-// games themselves write; see snake/src/storage.js, tetris/src/storage.js and
-// pacman/src/storage.js.
+// games themselves write; see snake/src/storage.js, tetris/src/storage.js,
+// pacman/src/storage.js and lander/src/storage.js.
 
 // m:ss.cc, matching how Tetris shows a Sprint time.
 function formatTime(ms) {

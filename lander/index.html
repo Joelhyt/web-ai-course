@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lunar Lander</title>
+    <link rel="stylesheet" href="../shared/theme.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game">
+      <a class="back" href="../">&larr; All games</a>
+
+      <header class="hud">
+        <h1>Lunar Lander</h1>
+        <dl class="stats">
+          <div class="stat">
+            <dt>Score</dt>
+            <dd id="score">0</dd>
+          </div>
+          <div class="stat">
+            <dt>Best</dt>
+            <dd id="best">0</dd>
+          </div>
+          <div class="stat" id="fuel-stat">
+            <dt>Fuel</dt>
+            <dd id="fuel">1,000</dd>
+          </div>
+          <div class="stat">
+            <dt>Round</dt>
+            <dd id="round">1</dd>
+          </div>
+        </dl>
+      </header>
+
+      <canvas id="board" aria-label="Lunar Lander: the lander above the moon's surface"></canvas>
+      <p id="announcer" class="visually-hidden" aria-live="polite"></p>
+
+      <footer class="controls">
+        <p class="keys">
+          <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> / <kbd>A</kbd><kbd>D</kbd> rotate</span> ·
+          <span><kbd>&uarr;</kbd>/<kbd>W</kbd>/<kbd>Space</kbd> thrust</span> ·
+          <span><kbd>Enter</kbd> start</span> ·
+          <span><kbd>P</kbd>/<kbd>Esc</kbd> pause</span> ·
+          <span><kbd>R</kbd> restart</span>
+        </p>
+        <p class="keys">
+          Touch down on a pad slower than 2&nbsp;m/s down and 1.5&nbsp;m/s across, within 8° of upright.
+          Fuel is your lives: a crash costs 250, a clean landing gives 50 back.
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
