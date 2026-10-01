@@ -14,6 +14,7 @@ The pages share `shared/theme.css`, so serve the root rather than a single game'
 
 - [`snake/`](snake/): classic Snake with power-ups, Time attack and an Adventure dungeon mode.
 - [`tetris/`](tetris/): modern guideline Tetris (SRS, 7-bag, hold, T-spins) with Marathon and Sprint 40L.
+- [`pacman/`](pacman/): arcade-accurate Pac-Man: the original maze, ghost AI, speeds, timers and fruit.
 
 Each game is self-contained in its own folder (`index.html`, `styles.css`, `src/`, tests) and follows the same shape. Pure rules live in `game.js` with no DOM access, so `node --test` covers them. Rendering, input, storage and the loop sit around them.
 
@@ -24,6 +25,7 @@ index.html, hub.css, hub.js   the game picker, showing each game's personal best
 shared/theme.css              colour tokens and base styles shared by every page
 snake/                        Snake
 tetris/                       Tetris
+pacman/                       Pac-Man
 ```
 
 To add a game, give it its own folder and a card in `index.html`. If it stores personal bests, add their `localStorage` keys to the card with `data-best`.
