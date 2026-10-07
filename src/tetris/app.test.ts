@@ -81,8 +81,13 @@ describe("mountTetrisGame", () => {
     expect(document.getElementById("tetris-best-score")?.textContent).toBe("15");
     expect(document.getElementById("tetris-level")?.textContent).toBe("1");
     expect(document.getElementById("tetris-lines")?.textContent).toBe("0");
-    expect(document.getElementById("tetris-next-piece")?.textContent).toBe("I");
-    expect(document.getElementById("tetris-hold-piece")?.textContent).toBe("-");
+    expect(document.getElementById("tetris-hold-piece-label")?.textContent).toBe("Empty");
+    expect(document.getElementById("tetris-next-piece-1")?.textContent).toBe("I");
+    expect(document.getElementById("tetris-next-piece-2")?.textContent).toBe("O");
+    expect(document.getElementById("tetris-next-piece-3")?.textContent).toBe("L");
+    expect(
+      document.getElementById("tetris-next-canvas-1")?.getAttribute("aria-label")
+    ).toContain("I");
     expect(document.getElementById("tetris-status")?.textContent).toContain("Game running");
     expect(storage.saves).toEqual([15]);
     const lastRender = renders[renders.length - 1];
@@ -128,6 +133,8 @@ describe("mountTetrisGame", () => {
     expect(app.getState().heldPiece).toBe("I");
     expect(app.getState().activePiece.type).toBe("O");
     expect(app.getState().canHold).toBe(false);
+    expect(document.getElementById("tetris-hold-piece-label")?.textContent).toBe("I");
+    expect(document.getElementById("tetris-next-piece-1")?.textContent).toBe("L");
   });
 
   it("advances with fixed timestep gravity", () => {

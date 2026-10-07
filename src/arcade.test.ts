@@ -6,7 +6,7 @@ function renderArcadeHost(): void {
   document.body.innerHTML = `<div id="arcade-root"></div>`;
 }
 
-function getPlayButton(game: "snake" | "tetris"): HTMLButtonElement {
+function getPlayButton(game: "snake" | "tetris" | "pacman"): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>(`[data-game="${game}"]`);
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Missing play button for ${game}`);
@@ -38,7 +38,7 @@ describe("mountArcade", () => {
     document.body.innerHTML = "";
   });
 
-  it("renders an accessible launcher with Snake and Tetris cards", () => {
+  it("renders an accessible launcher with Snake, Tetris, and Pac-Man cards", () => {
     renderArcadeHost();
 
     arcade = mountArcade(document);
@@ -46,6 +46,7 @@ describe("mountArcade", () => {
     expect(document.querySelector("h1")?.textContent).toBe("Game Arcade");
     expect(getPlayButton("snake").textContent).toContain("Play Snake");
     expect(getPlayButton("tetris").textContent).toContain("Play Tetris");
+    expect(getPlayButton("pacman").textContent).toContain("Play Pac-Man");
     expect(document.getElementById("arcade-status")?.getAttribute("role")).toBe(
       "status"
     );
@@ -182,6 +183,91 @@ describe("mountArcade", () => {
       "Tetris is currently unavailable."
     );
     expect(arcade.getActiveGame()).toBeNull();
+  });
+
+  it("loads Pac-Man mount factory dynamically and destroys it on back", async () => {
+    renderArcadeHost();
+    const pacmanDestroy = vi.fn();
+    const pacmanMount = vi.fn(() => ({ destroy: pacmanDestroy }));
+    const loadPacmanMount = vi.fn(async () => pacmanMount as GameMountFactory);
+
+    arcade = mountArcade(document, {
+      mountSnakeGame: () => ({ destroy: vi.fn() }),
+      loadTetrisMount: async () => {
+        throw new Error("not used");
+      },
+      loadPacmanMount
+    });
+
+    getPlayButton("pacman").click();
+    expect(document.querySelector(".arcade-game-host .arcade-status")?.textContent).toContain(
+      "Loading Pac-Man"
+    );
+    await flushPromises();
+
+    expect(loadPacmanMount).toHaveBeenCalledTimes(1);
+    expect(pacmanMount).toHaveBeenCalledWith(document);
+    expect(arcade.getActiveGame()).toBe("pacman");
+
+    getBackButton().click();
+    expect(pacmanDestroy).toHaveBeenCalledTimes(1);
+    expect(arcade.getActiveGame()).toBeNull();
+  });
+
+  it("returns home with status message when Pac-Man mount cannot load", async () => {
+    renderArcadeHost();
+
+    arcade = mountArcade(document, {
+      mountSnakeGame: () => ({ destroy: vi.fn() }),
+      loadTetrisMount: async () => {
+        throw new Error("not used");
+      },
+      loadPacmanMount: async () => {
+        throw new Error("missing module");
+      }
+    });
+
+    getPlayButton("pacman").click();
+    await flushPromises();
+
+    expect(getPlayButton("pacman")).toBeInstanceOf(HTMLButtonElement);
+    expect(document.getElementById("arcade-status")?.textContent).toContain(
+      "Pac-Man is currently unavailable."
+    );
+    expect(arcade.getActiveGame()).toBeNull();
+  });
+
+  it("disposes late Pac-Man mount results after user returns home", async () => {
+    renderArcadeHost();
+    const pacmanDestroy = vi.fn();
+    const pacmanMount = vi.fn(() => ({ destroy: pacmanDestroy }));
+    let resolveLoader: ((factory: GameMountFactory) => void) | null = null;
+    const loadPacmanMount = vi.fn(
+      () =>
+        new Promise<GameMountFactory>((resolve) => {
+          resolveLoader = resolve;
+        })
+    );
+
+    arcade = mountArcade(document, {
+      mountSnakeGame: () => ({ destroy: vi.fn() }),
+      loadTetrisMount: async () => {
+        throw new Error("not used");
+      },
+      loadPacmanMount
+    });
+
+    getPlayButton("pacman").click();
+    getBackButton().click();
+    expect(getPlayButton("snake")).toBeInstanceOf(HTMLButtonElement);
+
+    resolveLoader?.(pacmanMount as GameMountFactory);
+    await flushPromises();
+
+    expect(pacmanMount).toHaveBeenCalledWith(document);
+    expect(pacmanDestroy).toHaveBeenCalledTimes(1);
+    expect(arcade.getActiveGame()).toBeNull();
+    expect(getPlayButton("pacman")).toBeInstanceOf(HTMLButtonElement);
   });
 
   it("destroys the active game when arcade is destroyed", () => {

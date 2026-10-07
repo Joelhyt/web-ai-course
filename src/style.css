@@ -99,7 +99,9 @@ body {
 .arcade-back-button:focus-visible,
 #restart-button:focus-visible,
 #tetris-pause-button:focus-visible,
-#tetris-restart-button:focus-visible {
+#tetris-restart-button:focus-visible,
+#pacman-pause-button:focus-visible,
+#pacman-restart-button:focus-visible {
   outline: 2px solid #005fcc;
   outline-offset: 2px;
 }
@@ -191,6 +193,13 @@ h1 {
   background: #fff;
 }
 
+#pacman-canvas {
+  width: min(88vmin, 640px);
+  height: auto;
+  border: 2px solid #222;
+  background: #000;
+}
+
 .instructions {
   margin: 0;
   max-width: 40rem;
@@ -213,6 +222,61 @@ h1 {
   width: 100%;
 }
 
+.tetris-layout {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(170px, 220px);
+  gap: 0.9rem;
+  justify-content: center;
+  align-items: start;
+}
+
+.tetris-preview-panel {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.tetris-preview-group {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
+  padding: 0.55rem;
+  border: 1px solid #d7dce5;
+  border-radius: 0.55rem;
+  background: #f7f9ff;
+}
+
+.tetris-preview-group h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.tetris-preview-group p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.tetris-next-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.tetris-next-slot {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+}
+
+.tetris-preview-canvas {
+  width: 84px;
+  height: 66px;
+  border: 1px solid #c8d0e0;
+  border-radius: 0.4rem;
+  background: #f7f8fb;
+}
+
 .tetris-controls {
   display: flex;
   flex-wrap: wrap;
@@ -221,7 +285,9 @@ h1 {
 }
 
 #tetris-pause-button,
-#tetris-restart-button {
+#tetris-restart-button,
+#pacman-pause-button,
+#pacman-restart-button {
   padding: 0.5rem 1rem;
   border: 1px solid #222;
   background: #fff;
@@ -231,7 +297,9 @@ h1 {
 }
 
 #tetris-pause-button:hover,
-#tetris-restart-button:hover {
+#tetris-restart-button:hover,
+#pacman-pause-button:hover,
+#pacman-restart-button:hover {
   background: #efefef;
 }
 
@@ -268,5 +336,15 @@ h1 {
 
   #tetris-canvas {
     width: min(72vmin, 320px);
+  }
+
+  .tetris-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .tetris-preview-panel {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+    width: min(100%, 360px);
   }
 }

@@ -1,8 +1,10 @@
 import {
   createBrowserScoreStorage,
+  createBrowserPacmanScoreStorage,
   createBrowserTetrisScoreStorage,
   parseBestScore,
   BEST_SCORE_STORAGE_KEY_PREFIX,
+  PACMAN_BEST_SCORE_STORAGE_KEY,
   TETRIS_BEST_SCORE_STORAGE_KEY
 } from "./storage";
 
@@ -87,7 +89,7 @@ describe("best-score storage", () => {
     expect(errors).toEqual(["read", "write"]);
   });
 
-  it("stores Tetris scores independently from Snake scores", () => {
+  it("stores Snake, Tetris, and Pac-Man scores independently", () => {
     const storage = createMemoryStorage();
     const snakeStorage = createBrowserScoreStorage(
       BEST_SCORE_STORAGE_KEY_PREFIX,
@@ -99,12 +101,19 @@ describe("best-score storage", () => {
       () => storage,
       () => {}
     );
+    const pacmanStorage = createBrowserPacmanScoreStorage(
+      PACMAN_BEST_SCORE_STORAGE_KEY,
+      () => storage,
+      () => {}
+    );
 
     snakeStorage.saveBestScore("classic", "solid", 12);
     tetrisStorage.saveBestScore(37);
+    pacmanStorage.saveBestScore(99);
 
     expect(snakeStorage.loadBestScore("classic", "solid")).toBe(12);
     expect(tetrisStorage.loadBestScore()).toBe(37);
+    expect(pacmanStorage.loadBestScore()).toBe(99);
   });
 
   it("reports unavailable Tetris storage without throwing", () => {
@@ -122,5 +131,64 @@ describe("best-score storage", () => {
     expect(adapter.loadBestScore()).toBe(0);
     adapter.saveBestScore(5);
     expect(errors).toEqual(["read", "read"]);
+  });
+
+  it("parses malformed Pac-Man values and rejects invalid scores", () => {
+    const storage = createMemoryStorage();
+    const adapter = createBrowserPacmanScoreStorage(
+      PACMAN_BEST_SCORE_STORAGE_KEY,
+      () => storage,
+      () => {}
+    );
+
+    storage.setItem(PACMAN_BEST_SCORE_STORAGE_KEY, "bad-value");
+    expect(adapter.loadBestScore()).toBe(0);
+
+    adapter.saveBestScore(18);
+    adapter.saveBestScore(-1);
+    adapter.saveBestScore(Number.NaN);
+    adapter.saveBestScore(Number.POSITIVE_INFINITY);
+    expect(adapter.loadBestScore()).toBe(18);
+  });
+
+  it("reports unavailable Pac-Man storage without throwing", () => {
+    const errors: string[] = [];
+    const adapter = createBrowserPacmanScoreStorage(
+      PACMAN_BEST_SCORE_STORAGE_KEY,
+      () => {
+        throw new Error("storage unavailable");
+      },
+      (operation) => {
+        errors.push(operation);
+      }
+    );
+
+    expect(adapter.loadBestScore()).toBe(0);
+    adapter.saveBestScore(5);
+    expect(errors).toEqual(["read", "read"]);
+  });
+
+  it("reports Pac-Man read and write errors without throwing", () => {
+    const errors: string[] = [];
+    const failingStorage = {
+      getItem(): string | null {
+        throw new Error("read failed");
+      },
+      setItem(): void {
+        throw new Error("write failed");
+      }
+    };
+
+    const adapter = createBrowserPacmanScoreStorage(
+      PACMAN_BEST_SCORE_STORAGE_KEY,
+      () => failingStorage,
+      (operation) => {
+        errors.push(operation);
+      }
+    );
+
+    expect(adapter.loadBestScore()).toBe(0);
+    adapter.saveBestScore(5);
+    expect(errors).toEqual(["read", "write"]);
   });
 });

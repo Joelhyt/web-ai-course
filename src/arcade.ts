@@ -1,6 +1,6 @@
 import { mountSnakeGame as defaultMountSnakeGame } from "./app";
 
-type GameId = "snake" | "tetris";
+type GameId = "snake" | "tetris" | "pacman";
 
 export interface DestroyableGame {
   destroy(): void;
@@ -14,10 +14,15 @@ interface TetrisModule {
   mountTetrisGame?: GameMountFactory;
 }
 
+interface PacmanModule {
+  mountPacmanGame?: GameMountFactory;
+}
+
 export interface ArcadeOptions {
   readonly hostId?: string;
   readonly mountSnakeGame?: GameMountFactory;
   readonly loadTetrisMount?: () => Promise<GameMountFactory>;
+  readonly loadPacmanMount?: () => Promise<GameMountFactory>;
 }
 
 export interface ArcadeApp {
@@ -52,6 +57,16 @@ const HOME_MARKUP = `
         </p>
         <button type="button" class="arcade-play-button" data-game="tetris">
           Play Tetris
+        </button>
+      </li>
+      <li class="arcade-card">
+        <h2>Pac-Man</h2>
+        <p>
+          Navigate the original maze, dodge colorful ghosts, and chase fruit
+          bonuses between power-pellet runs.
+        </p>
+        <button type="button" class="arcade-play-button" data-game="pacman">
+          Play Pac-Man
         </button>
       </li>
     </ul>
@@ -116,8 +131,24 @@ async function loadDefaultTetrisMount(): Promise<GameMountFactory> {
   return importedModule.mountTetrisGame;
 }
 
+async function loadDefaultPacmanMount(): Promise<GameMountFactory> {
+  const importedModule = (await import("./pacman/app")) as PacmanModule;
+
+  if (typeof importedModule.mountPacmanGame !== "function") {
+    throw new Error("Expected mountPacmanGame export from src/pacman/app.ts");
+  }
+
+  return importedModule.mountPacmanGame;
+}
+
 function gameTitle(gameId: GameId): string {
-  return gameId === "snake" ? "Snake" : "Tetris";
+  if (gameId === "snake") {
+    return "Snake";
+  }
+  if (gameId === "tetris") {
+    return "Tetris";
+  }
+  return "Pac-Man";
 }
 
 function renderGameShell(host: HTMLElement): HTMLButtonElement {
@@ -145,6 +176,7 @@ export function mountArcade(
   const host = getHostElement(root, options.hostId ?? DEFAULT_HOST_ID);
   const mountSnake = options.mountSnakeGame ?? defaultMountSnakeGame;
   const loadTetrisMount = options.loadTetrisMount ?? loadDefaultTetrisMount;
+  const loadPacmanMount = options.loadPacmanMount ?? loadDefaultPacmanMount;
 
   let destroyed = false;
   let activeGameId: GameId | null = null;
@@ -194,6 +226,9 @@ export function mountArcade(
     const tetrisButton = host.querySelector<HTMLButtonElement>(
       "[data-game='tetris']"
     );
+    const pacmanButton = host.querySelector<HTMLButtonElement>(
+      "[data-game='pacman']"
+    );
 
     if (!(snakeButton instanceof HTMLButtonElement)) {
       throw new Error("Missing Snake launcher button");
@@ -201,12 +236,18 @@ export function mountArcade(
     if (!(tetrisButton instanceof HTMLButtonElement)) {
       throw new Error("Missing Tetris launcher button");
     }
+    if (!(pacmanButton instanceof HTMLButtonElement)) {
+      throw new Error("Missing Pac-Man launcher button");
+    }
 
     addListener(snakeButton, "click", () => {
       void launchGame("snake");
     });
     addListener(tetrisButton, "click", () => {
       void launchGame("tetris");
+    });
+    addListener(pacmanButton, "click", () => {
+      void launchGame("pacman");
     });
   }
 
@@ -254,7 +295,11 @@ export function mountArcade(
 
     try {
       const mountGame =
-        gameId === "snake" ? mountSnake : await loadTetrisMount();
+        gameId === "snake"
+          ? mountSnake
+          : gameId === "tetris"
+            ? await loadTetrisMount()
+            : await loadPacmanMount();
       const mounted = await mountGame(root);
 
       if (destroyed || token !== transitionToken) {

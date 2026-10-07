@@ -1,4 +1,8 @@
-import { createTetrisCanvasRenderer, type TetrisRenderer } from "./render";
+import {
+  createTetrisCanvasRenderer,
+  renderTetrominoPreview,
+  type TetrisRenderer
+} from "./render";
 import {
   advanceTetrisState,
   createInitialTetrisState,
@@ -42,11 +46,35 @@ const TETRIS_MARKUP = `
       <p>Best: <span id="tetris-best-score">0</span></p>
       <p>Level: <span id="tetris-level">1</span></p>
       <p>Lines: <span id="tetris-lines">0</span></p>
-      <p>Next: <span id="tetris-next-piece">-</span></p>
-      <p>Hold: <span id="tetris-hold-piece">-</span></p>
     </section>
     <p id="tetris-status" class="status" aria-live="polite"></p>
-    <canvas id="tetris-canvas" role="img" aria-label="Tetris game board"></canvas>
+    <section class="tetris-layout" aria-label="Tetris board and piece previews">
+      <canvas id="tetris-canvas" role="img" aria-label="Tetris game board"></canvas>
+      <aside class="tetris-preview-panel" aria-label="Held and upcoming tetrominoes">
+        <section class="tetris-preview-group">
+          <h2>Hold</h2>
+          <canvas id="tetris-hold-canvas" class="tetris-preview-canvas" role="img" aria-label="Held tetromino preview"></canvas>
+          <p id="tetris-hold-piece-label">Empty</p>
+        </section>
+        <section class="tetris-preview-group">
+          <h2>Next</h2>
+          <div class="tetris-next-list">
+            <div class="tetris-next-slot">
+              <canvas id="tetris-next-canvas-1" class="tetris-preview-canvas" role="img" aria-label="Next tetromino 1"></canvas>
+              <p id="tetris-next-piece-1">-</p>
+            </div>
+            <div class="tetris-next-slot">
+              <canvas id="tetris-next-canvas-2" class="tetris-preview-canvas" role="img" aria-label="Next tetromino 2"></canvas>
+              <p id="tetris-next-piece-2">-</p>
+            </div>
+            <div class="tetris-next-slot">
+              <canvas id="tetris-next-canvas-3" class="tetris-preview-canvas" role="img" aria-label="Next tetromino 3"></canvas>
+              <p id="tetris-next-piece-3">-</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
     <div class="tetris-controls">
       <button id="tetris-pause-button" type="button">Pause</button>
       <button id="tetris-restart-button" type="button" hidden disabled>Restart</button>
@@ -111,6 +139,10 @@ function mountGameShell(root: Document): HTMLElement {
   return host;
 }
 
+function formatTetrominoLabel(piece: TetrisState["heldPiece"]): string {
+  return piece ?? "Empty";
+}
+
 function persistBestScore(
   state: TetrisState,
   storage: TetrisScoreStorage,
@@ -146,16 +178,26 @@ export function mountTetrisGame(
   );
   const levelElement = getRequiredElement(shell, "#tetris-level", HTMLSpanElement);
   const linesElement = getRequiredElement(shell, "#tetris-lines", HTMLSpanElement);
-  const nextPieceElement = getRequiredElement(
+  const holdCanvas = getRequiredElement(shell, "#tetris-hold-canvas", HTMLCanvasElement);
+  const holdLabel = getRequiredElement(shell, "#tetris-hold-piece-label", HTMLParagraphElement);
+  const nextCanvas1 = getRequiredElement(
     shell,
-    "#tetris-next-piece",
-    HTMLSpanElement
+    "#tetris-next-canvas-1",
+    HTMLCanvasElement
   );
-  const holdPieceElement = getRequiredElement(
+  const nextCanvas2 = getRequiredElement(
     shell,
-    "#tetris-hold-piece",
-    HTMLSpanElement
+    "#tetris-next-canvas-2",
+    HTMLCanvasElement
   );
+  const nextCanvas3 = getRequiredElement(
+    shell,
+    "#tetris-next-canvas-3",
+    HTMLCanvasElement
+  );
+  const nextLabel1 = getRequiredElement(shell, "#tetris-next-piece-1", HTMLParagraphElement);
+  const nextLabel2 = getRequiredElement(shell, "#tetris-next-piece-2", HTMLParagraphElement);
+  const nextLabel3 = getRequiredElement(shell, "#tetris-next-piece-3", HTMLParagraphElement);
   const statusElement = getRequiredElement(shell, "#tetris-status", HTMLParagraphElement);
   const pauseButton = getRequiredElement(
     shell,
@@ -189,8 +231,19 @@ export function mountTetrisGame(
     bestScoreElement.textContent = String(bestScore);
     levelElement.textContent = String(state.level);
     linesElement.textContent = String(state.totalLinesCleared);
-    nextPieceElement.textContent = state.nextPiece;
-    holdPieceElement.textContent = state.heldPiece ?? "-";
+    const nextPieces = [state.nextPiece, state.queue[0] ?? null, state.queue[1] ?? null];
+    holdLabel.textContent = formatTetrominoLabel(state.heldPiece);
+    nextLabel1.textContent = formatTetrominoLabel(nextPieces[0]);
+    nextLabel2.textContent = formatTetrominoLabel(nextPieces[1]);
+    nextLabel3.textContent = formatTetrominoLabel(nextPieces[2]);
+    holdCanvas.setAttribute("aria-label", `Held tetromino: ${formatTetrominoLabel(state.heldPiece)}`);
+    nextCanvas1.setAttribute("aria-label", `Next tetromino 1: ${formatTetrominoLabel(nextPieces[0])}`);
+    nextCanvas2.setAttribute("aria-label", `Next tetromino 2: ${formatTetrominoLabel(nextPieces[1])}`);
+    nextCanvas3.setAttribute("aria-label", `Next tetromino 3: ${formatTetrominoLabel(nextPieces[2])}`);
+    renderTetrominoPreview(holdCanvas, state.heldPiece);
+    renderTetrominoPreview(nextCanvas1, nextPieces[0]);
+    renderTetrominoPreview(nextCanvas2, nextPieces[1]);
+    renderTetrominoPreview(nextCanvas3, nextPieces[2]);
     statusElement.textContent = buildStatusText(state);
     pauseButton.textContent = state.status === "paused" ? "Resume" : "Pause";
     pauseButton.disabled = state.status === "game-over";
