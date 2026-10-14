@@ -9,6 +9,11 @@ body {
   width: min(100%, 760px);
 }
 
+.hub header .back {
+  display: inline-block;
+  margin-bottom: 10px;
+}
+
 .hub header h1 {
   margin: 0;
   font-size: 30px;
