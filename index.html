@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web AI Course</title>
+    <link rel="stylesheet" href="claude/shared/theme.css" />
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <main class="landing">
+      <header>
+        <h1>Web AI Course</h1>
+        <p>The same brief, built twice with different AI tools: a set of classic browser games. Pick a version to play.</p>
+      </header>
+
+      <ul class="projects">
+        <li>
+          <a class="card" href="claude/" style="--card-accent: #4ade80">
+            <span class="tool">Claude Code</span>
+            <h2>Claude version</h2>
+            <p>Built with Claude Code using Claude Opus 5, Sonnet 5 and Opus 5.5. Vanilla JavaScript and canvas, no dependencies, no build step.</p>
+            <ul class="games">
+              <li>Snake</li>
+              <li>Tetris</li>
+              <li>Pac-Man</li>
+              <li>Lunar Lander</li>
+            </ul>
+          </a>
+        </li>
+        <li>
+          <a class="card" href="copilot/" style="--card-accent: #60a5fa">
+            <span class="tool">GitHub Copilot</span>
+            <h2>Copilot version</h2>
+            <p>Built with GitHub Copilot. TypeScript, bundled with Vite, tested with Vitest.</p>
+            <ul class="games">
+              <li>Snake</li>
+              <li>Tetris</li>
+              <li>Pac-Man</li>
+            </ul>
+          </a>
+        </li>
+      </ul>
+
+      <footer>
+        <a href="https://github.com/Joelhyt/web-ai-course">Source on GitHub</a>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -4,8 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Browser Arcade</title>
+    <style>
+      /* Link back to the combined site's landing page. */
+      .site-back {
+        display: block;
+        width: min(100%, 960px);
+        margin: 1rem auto 0;
+        padding: 0 clamp(1rem, 2vw, 1.5rem);
+        font: 0.85rem Arial, Helvetica, sans-serif;
+        color: #555;
+        text-decoration: none;
+      }
+      .site-back:hover,
+      .site-back:focus-visible {
+        color: #141414;
+        text-decoration: underline;
+      }
+    </style>
   </head>
   <body>
+    <a class="site-back" href="../">&larr; Both projects</a>
     <div id="arcade-root"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

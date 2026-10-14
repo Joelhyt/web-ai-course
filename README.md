@@ -1,33 +1,49 @@
 Web ai project. Comparing different models, tools and workflows
 
-## Running it
+The same brief, a set of classic browser games, built twice with different AI tools. A landing page lets you pick which version to play.
 
-Every game is a static page with no build step. Serve the repository root and open the game picker:
-
-```bash
-python3 -m http.server 8000   # then open http://localhost:8000
-```
-
-The pages share `shared/theme.css`, so serve the root rather than a single game's folder.
-
-## Games
-
-- [`snake/`](snake/): classic Snake with power-ups, Time attack and an Adventure dungeon mode.
-- [`tetris/`](tetris/): modern guideline Tetris (SRS, 7-bag, hold, T-spins) with Marathon and Sprint 40L.
-- [`pacman/`](pacman/): arcade-accurate Pac-Man: the original maze, ghost AI, speeds, timers and fruit.
-- [`lander/`](lander/): arcade-style Lunar Lander: generated terrain, multiplier pads, fuel as lives.
-
-Each game is self-contained in its own folder (`index.html`, `styles.css`, `src/`, tests) and follows the same shape. Pure rules live in `game.js` with no DOM access, so `node --test` covers them. Rendering, input, storage and the loop sit around them.
+| | Claude version | Copilot version |
+|---|---|---|
+| Folder | [`claude/`](claude/) | [`copilot/`](copilot/) |
+| Built with | Claude Code (Claude Opus 5, Sonnet 5, Opus 5.5) | GitHub Copilot |
+| Author | Joel Hyttinen | Teemu Keskinen ([TeemuKeskinen/tekoaly](https://github.com/TeemuKeskinen/tekoaly)) |
+| Stack | Vanilla JavaScript and canvas, no build step | TypeScript, Vite, Vitest |
+| Games | Snake, Tetris, Pac-Man, Lunar Lander | Snake, Tetris, Pac-Man |
 
 ## Layout
 
 ```
-index.html, hub.css, hub.js   the game picker, showing each game's personal bests
-shared/theme.css              colour tokens and base styles shared by every page
-snake/                        Snake
-tetris/                       Tetris
-pacman/                       Pac-Man
-lander/                       Lunar Lander
+index.html, landing.css       the landing page: choose a version
+claude/                       the Claude version (see claude/README.md)
+copilot/                      the Copilot version (see copilot/README.md)
+scripts/build-site.sh         builds everything into _site/
+.github/workflows/pages.yml   tests, builds and deploys to GitHub Pages
 ```
 
-To add a game, give it its own folder and a card in `index.html`. If it stores personal bests, add their `localStorage` keys to the card with `data-best`.
+`copilot/` was added with `git subtree`, so it keeps the original commits. To pull in later changes from the Copilot repo:
+
+```bash
+git subtree pull --prefix=copilot https://github.com/TeemuKeskinen/tekoaly main
+```
+
+## Building and previewing
+
+The Copilot version needs a build step, so preview the combined site from `_site/`:
+
+```bash
+scripts/build-site.sh                  # needs Node.js 20+ and rsync
+python3 -m http.server 8000 -d _site   # then open http://localhost:8000
+```
+
+Each version can also be run on its own: see `claude/README.md` and `copilot/README.md`.
+
+## Deployment
+
+Every push to `main` runs `.github/workflows/pages.yml`:
+
+1. The Claude version's tests (`node --test` for each game). A failure stops the deploy.
+2. `scripts/build-site.sh`.
+3. The Copilot version's tests. These are reported but don't block the deploy, because the upstream project currently has four failing tests of its own.
+4. Publishes `_site/` to GitHub Pages.
+
+One-time setup: in the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.

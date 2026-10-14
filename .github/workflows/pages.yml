@@ -1,0 +1,66 @@
+# Tests both projects, builds the combined site and publishes it to GitHub
+# Pages. Pages must be set to deploy from "GitHub Actions" in the repo settings.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push replaces a queued one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: copilot/package-lock.json
+
+      - name: Test the Claude project
+        run: |
+          for game in snake tetris pacman lander; do
+            (cd "claude/$game" && node --test)
+          done
+
+      - name: Build the site
+        run: scripts/build-site.sh
+
+      # Reported but not blocking: the Copilot project's upstream repo has
+      # failing tests of its own (2 unit, 2 jsdom as of commit 9113c34), and the
+      # site should not wait on fixes there. Both suites run so all results show.
+      - name: Test the Copilot project (unit)
+        continue-on-error: true
+        run: cd copilot && npm run test:unit
+
+      - name: Test the Copilot project (jsdom)
+        continue-on-error: true
+        run: cd copilot && npm run test:e2e
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
